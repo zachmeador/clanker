@@ -1,0 +1,23 @@
+[project]
+name = "recipes"
+version = "0.1.0"
+description = "Simple recipe manager"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "typer",
+    "pydantic",
+    "pydantic-ai",
+    "python-frontmatter",
+    "python-dotenv",
+    "loguru",
+    "rich",
+    "clanker",
+]
+
+[project.scripts]
+recipes = "recipes.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
