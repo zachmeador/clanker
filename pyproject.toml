@@ -1,5 +1,5 @@
 [project]
-name = "clanker"
+name = "clanker-workspace"
 version = "0.1.0"
 description = "An LLM app environment."
 readme = "README.md"
@@ -10,11 +10,15 @@ dependencies = [
     "rich",
     "pydantic",
     "pydantic-ai",
+    "pydantic-settings",
     "pyyaml",
+    "loguru",
+    "python-dotenv",
 ]
 
 [tool.uv.workspace]
-members = ["apps/*"]
+members = ["apps/*", "clanker", "scratch"]
 
 [tool.uv.sources]
-clanker = { path = "src/clanker", editable = true }
+clanker = { workspace = true }
+

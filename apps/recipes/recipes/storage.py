@@ -3,7 +3,7 @@
 from typing import Optional
 
 import frontmatter
-from loguru import logger
+from clanker.logger import get_logger
 from clanker.storage.vault import Vault
 
 from .models import LogEntry, RecipeContent, RecipeFrontmatter
@@ -15,7 +15,8 @@ class RecipeStorage:
     def __init__(self):
         """Initialize storage with vault."""
         self.vault = Vault.for_app("recipes")
-        logger.info("Recipe storage initialized")
+        self.logger = get_logger("recipes")
+        self.logger.info("Recipe storage initialized")
     
     def _recipe_path(self, name: str) -> str:
         """Get path for a recipe file."""
@@ -46,7 +47,7 @@ class RecipeStorage:
         content = frontmatter.dumps(post)
         self.vault.write(path, content)
         
-        logger.info(f"Saved recipe: {path}")
+        self.logger.info(f"Saved recipe: {path}")
         return path
     
     def load(self, name: str) -> Optional[RecipeContent]:
@@ -72,7 +73,7 @@ class RecipeStorage:
         
         if self.vault.exists(path):
             self.vault.delete(path)
-            logger.info(f"Deleted recipe: {path}")
+            self.logger.info(f"Deleted recipe: {path}")
             return True
         return False
     

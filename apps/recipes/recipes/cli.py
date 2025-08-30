@@ -1,25 +1,19 @@
 """CLI for recipe management using typer."""
 
-import os
-import sys
 from datetime import datetime
 from typing import Optional
 
 import typer
-from dotenv import load_dotenv
-from loguru import logger
+from clanker.logger import get_logger
+from clanker.models import create_agent
 from pydantic_ai import Agent
-from pydantic_ai.models.anthropic import AnthropicModel
 from rich.console import Console
 from rich.markdown import Markdown
 
 from .models import LogEntry, RecipeContent
 from .storage import RecipeStorage
 
-load_dotenv()
-
-logger.remove()
-logger.add(sys.stderr, level="INFO")
+logger = get_logger("recipes")
 
 app = typer.Typer(help="Simple recipe manager")
 console = Console()
@@ -27,49 +21,32 @@ storage = RecipeStorage()
 
 
 def get_recipe_agent() -> Agent[None, RecipeContent]:
-    """Create agent for parsing recipes."""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    
-    # Try to load from clanker config if not in env
-    if not api_key:
-        try:
-            from pathlib import Path
-            import sys
-            # Add parent dir to path to import clanker
-            sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-            from clanker.config import ClankerConfig
-            config = ClankerConfig.load()
-            api_key = config.api_keys.anthropic
-        except ImportError:
-            pass
-    
-    if not api_key:
-        console.print("[red]Error: ANTHROPIC_API_KEY not found in environment or clanker config[/red]")
+    """Create agent for parsing recipes using clanker model conventions."""
+    try:
+        return create_agent(
+            "anthropic:claude-3-5-sonnet-latest",
+            output_type=RecipeContent,
+            system_prompt="""You are a recipe parser. Extract recipe information and format it properly.
+            
+            The frontmatter should contain:
+            - title: Recipe name
+            - servings: Number of servings
+            - prep_time: Prep time in minutes (if mentioned)
+            - cook_time: Cook time in minutes (if mentioned)
+            - tags: List of relevant tags (cuisine type, meal type, dietary, etc)
+            - source: Where the recipe came from (if mentioned)
+            
+            The content should be well-formatted markdown with:
+            - Ingredients section
+            - Instructions section
+            - Any notes or tips
+            
+            Format ingredients as a bulleted list.
+            Format instructions as numbered steps."""
+        )
+    except Exception as e:
+        console.print(f"[red]Error creating model agent: {e}[/red]")
         raise typer.Exit(1)
-    
-    model = AnthropicModel("claude-3-5-sonnet-latest", api_key=api_key)
-    
-    return Agent(
-        model,
-        output_type=RecipeContent,
-        system_prompt="""You are a recipe parser. Extract recipe information and format it properly.
-        
-        The frontmatter should contain:
-        - title: Recipe name
-        - servings: Number of servings
-        - prep_time: Prep time in minutes (if mentioned)
-        - cook_time: Cook time in minutes (if mentioned)
-        - tags: List of relevant tags (cuisine type, meal type, dietary, etc)
-        - source: Where the recipe came from (if mentioned)
-        
-        The content should be well-formatted markdown with:
-        - Ingredients section
-        - Instructions section
-        - Any notes or tips
-        
-        Format ingredients as a bulleted list.
-        Format instructions as numbered steps."""
-    )
 
 
 @app.command()

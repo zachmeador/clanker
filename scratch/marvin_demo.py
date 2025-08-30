@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 """
-Marvin Demo - Deep exploration of core Marvin features for Clanker
+Marvin Demo - Now using Clanker's unified model system with Pydantic AI
 """
 
 import os
-from dotenv import load_dotenv
-import marvin
-from marvin import Agent
 from pydantic import BaseModel
 from typing import List, Optional, Literal
 from enum import Enum
 
-load_dotenv()
+# Import Clanker's model system instead of Marvin
+from clanker.models import create_agent, ModelTier
 
 
 def demo_1_intelligent_routing():
@@ -55,7 +53,10 @@ def demo_1_intelligent_routing():
     for query in test_queries:
         print(f"Query: '{query}'")
         
-        route = marvin.run(
+        # Use Clanker's model system for intelligent routing
+        agent = create_agent(ModelTier.LOW)  # Fast model for routing
+        
+        route = agent.run_sync(
             f"""Analyze this user query and determine the best action:
             Query: {query}
             
@@ -89,18 +90,18 @@ def demo_2_agent_collaboration():
     print("DEMO 2: AGENT COLLABORATION")
     print("="*60 + "\n")
     
-    # Create specialized agents
-    architect = Agent(
-        name="System Architect",
-        instructions="""You are an experienced system architect.
+    # Create specialized agents using Clanker's model system
+    architect = create_agent(
+        ModelTier.MEDIUM,  # Good balance for planning
+        system_prompt="""You are an experienced system architect.
         You analyze requirements and create clear, practical designs.
         Focus on clean architecture, separation of concerns, and maintainability.
         Be specific about file structure and dependencies."""
     )
     
-    implementer = Agent(
-        name="Code Implementer", 
-        instructions="""You are a Python developer who implements designs.
+    implementer = create_agent(
+        ModelTier.MEDIUM,  # Good balance for code generation
+        system_prompt="""You are a Python developer who implements designs.
         You write clean, well-structured code following best practices.
         You use Typer for CLIs, Pydantic for models, and follow conventions."""
     )
@@ -119,12 +120,12 @@ def demo_2_agent_collaboration():
         file_structure: dict
         key_dependencies: List[str]
     
-    design = architect.run(
+    design = architect.run_sync(
         f"Design a CLI application for: {requirement}",
         result_type=AppDesign
     )
     
-    print(f"\nDesign by {architect.name}:")
+    print(f"\nDesign by Architect:")
     print(f"  App Name: {design.name}")
     print(f"  Description: {design.description}")
     print(f"  Core Models: {', '.join(design.core_models)}")
@@ -149,7 +150,7 @@ def demo_2_agent_collaboration():
         code: str
     
     # Have the implementer create a key file based on the design
-    snippet = implementer.run(
+    snippet = implementer.run_sync(
         f"""Based on this design, create the main Pydantic model file:
         {design.model_dump_json(indent=2)}
         
@@ -157,7 +158,7 @@ def demo_2_agent_collaboration():
         result_type=CodeSnippet
     )
     
-    print(f"\nCode by {implementer.name}:")
+    print(f"\nCode by Implementer:")
     print(f"  File: {snippet.filename}")
     print(f"  Purpose: {snippet.purpose}")
     print(f"\n  Code Preview:")
@@ -204,7 +205,10 @@ def demo_3_context_aware_generation():
     print(f"Feature Request: {new_feature}")
     print("\nGenerating Typer CLI command following conventions...")
     
-    command = marvin.run(
+    # Use fast model for code generation
+    agent = create_agent(ModelTier.LOW)
+    
+    command = agent.run_sync(
         f"""Create a Typer CLI command for: {new_feature}
         
         Context: {existing_code_context}
@@ -238,7 +242,10 @@ def demo_3_context_aware_generation():
     
     model_request = "a model for tracking reading progress in books"
     
-    model = marvin.run(
+    # Use medium tier for more complex model generation
+    agent = create_agent(ModelTier.MEDIUM)
+    
+    model = agent.run_sync(
         f"""Create a Pydantic model for: {model_request}
         
         Context: {existing_code_context}
