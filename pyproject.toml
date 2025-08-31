@@ -1,0 +1,23 @@
+[project]
+name = "clanker"
+version = "0.1.0"
+description = "The clanker framework for building ai apps"
+readme = "README.md"
+authors = [
+    { name = "Zach Meador", email = "contact@zachmeador.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "loguru",
+    "typer",
+    "pydantic",
+    "pydantic-ai",
+    "rich",
+]
+
+[project.scripts]
+clanker = "clanker:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

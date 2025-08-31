@@ -8,7 +8,6 @@ Designed to be extended and used by LLMs.
 
 ```
 clanker/
-├── pyproject.toml          # Workspace root configuration
 ├── clanker/                # Core clanker package
 │   ├── __init__.py         # Package exports
 │   ├── models.py           # AI model abstractions (tiers, providers)
@@ -22,11 +21,8 @@ clanker/
 │       └── vault.py        # File storage with cross-app permissions
 ├── apps/                   # Individual clanker applications
 │   ├── recipes/            # Recipe management app
-│   │   ├── pyproject.toml
-│   │   └── recipes/
 │   └── resumes/            # AI-powered resume generator
-│       ├── pyproject.toml
-│       └── resumes/
+│
 ├── data/                   # Persistent data storage
 │   └── default/            # Default profile
 │       ├── clanker.db      # Shared SQLite database
@@ -35,9 +31,3 @@ clanker/
 │           ├── recipes/    # Recipe app files
 │           └── resumes/    # Resume app files
 ```
-
-### Key Components
-
-- **clanker/**: Core package providing shared utilities, model abstractions, and storage
-- **apps/**: Directory containing individual applications that use clanker's capabilities
-- **Workspace**: Uses uv workspace management to link apps with the core clanker package
