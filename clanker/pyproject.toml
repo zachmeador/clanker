@@ -1,14 +1,13 @@
 [project]
 name = "clanker"
 version = "0.1.0"
-description = "Core clanker functionality with unified model system"
+description = "The clanker."
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
-
-[tool.hatch.build.targets.wheel]
-packages = ["clanker"]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+dependencies = [
+  "pydantic-ai",
+  "python-dotenv",
+  "pyyaml",
+  "marvin",
+  "loguru",
+]

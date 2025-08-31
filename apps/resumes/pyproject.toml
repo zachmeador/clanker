@@ -1,19 +1,18 @@
 [project]
 name = "resumes"
 version = "0.1.0"
-description = "AI-powered resume generator"
+description = "Resume manager"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "clanker",
     "weasyprint",
     "markdown",
-    "clanker",
+    "typer",
+    "rich",
+    "pydantic",
+    "pydantic-ai",
 ]
 
-[project.scripts]
-resumes = "resumes.cli:app"
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
+[tool.uv.sources]
+clanker = { path = "../clanker", editable = true }

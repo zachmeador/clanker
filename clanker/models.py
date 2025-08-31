@@ -9,14 +9,13 @@ from dotenv import load_dotenv
 # Load environment variables at module import
 load_dotenv()
 
-from pydantic_ai import Agent, Model
-from pydantic_ai.models import (
-    OpenAIChatModel,
-    AnthropicModel, 
-    GeminiModel,
-    GroqModel,
-    MistralModel,
-)
+from pydantic_ai import Agent
+from pydantic_ai.models import Model
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.models.gemini import GeminiModel
+from pydantic_ai.models.groq import GroqModel
+from pydantic_ai.models.mistral import MistralModel
 
 
 class ModelTier(str, Enum):

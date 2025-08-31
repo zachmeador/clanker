@@ -1,9 +1,12 @@
 [project]
 name = "scratch"
 version = "0.1.0"
-description = "Scratch scripts and demos"
+description = "Add your description here"
+readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "clanker",
 ]
 
+[tool.uv.sources]
+clanker = { path = "../clanker", editable = true }

@@ -13,6 +13,11 @@
 - if tools should be made for apps, as interfaces, or if it's just context construction + terminal use tools
 - how much clanker wants to be another llm chat cli app (it doesn't at all)
 - api key management. i want simple and assume high user capability. apps and clanker will use this.
+- there's a great pattern idea in my head. clanker scaffolds out an app, creates the dir and stuff, then creates a llm-cli instance with a custom context explaining, then the user continues developing with that.
+    - when clanker is prompted to work on a new app? 
+- there needs to be a central abstraction for the available model types to clanker and its apps. a smart and simple design for knowing what ai providers the user has given clanker, and what their available models are. 
+- there needs to be a central simple abstraction for logging. use loguru i guess because it's clean.
+- a universal way to always have something like a CLAUDE.md
 
 ### immediate tasks
 
