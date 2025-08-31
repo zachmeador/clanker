@@ -134,15 +134,25 @@ def _create_model(model_str: str) -> Model:
     
     # Create appropriate Pydantic AI model
     if provider == "openai":
-        return OpenAIChatModel(model_name, api_key=api_key)
+        from pydantic_ai.providers.openai import OpenAIProvider
+        openai_provider = OpenAIProvider(api_key=api_key)
+        return OpenAIChatModel(model_name, provider=openai_provider)
     elif provider == "anthropic":
-        return AnthropicModel(model_name, api_key=api_key)
+        from pydantic_ai.providers.anthropic import AnthropicProvider
+        anthropic_provider = AnthropicProvider(api_key=api_key)
+        return AnthropicModel(model_name, provider=anthropic_provider)
     elif provider == "google":
-        return GeminiModel(model_name, api_key=api_key)
+        from pydantic_ai.providers.google import GoogleProvider
+        google_provider = GoogleProvider(api_key=api_key)
+        return GeminiModel(model_name, provider=google_provider)
     elif provider == "groq":
-        return GroqModel(model_name, api_key=api_key)
+        from pydantic_ai.providers.groq import GroqProvider
+        groq_provider = GroqProvider(api_key=api_key)
+        return GroqModel(model_name, provider=groq_provider)
     elif provider == "mistral":
-        return MistralModel(model_name, api_key=api_key)
+        from pydantic_ai.providers.mistral import MistralProvider
+        mistral_provider = MistralProvider(api_key=api_key)
+        return MistralModel(model_name, provider=mistral_provider)
     else:
         raise ValueError(
             f"Unknown provider '{provider}'. "

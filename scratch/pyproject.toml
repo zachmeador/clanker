@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "clanker",
-    "marvin>=3.2.0",
+    "marvin",
 ]
 
 [tool.uv.sources]
