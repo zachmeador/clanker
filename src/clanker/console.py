@@ -3,14 +3,13 @@
 import asyncio
 import sys
 from io import StringIO
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any
 from collections import deque
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
-from rich.text import Text
 
-from pydantic_ai.messages import ToolCallPart, ToolReturnPart
+from pydantic_ai.messages import ToolCallPart
 from .models import ModelTier, create_agent
 from .tools import create_clanker_toolset
 from .logger import get_logger

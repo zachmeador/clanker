@@ -46,25 +46,3 @@ class InputResolver:
     def get_app_info(self, app_name: str) -> Dict[str, Any] | None:
         """Get information about a specific app."""
         return self.apps.get(app_name)
-
-    def is_system_command(self, tokens: List[str]) -> bool:
-        """Check if tokens represent a system command."""
-        if not tokens:
-            return False
-        return tokens[0] in self.system_commands
-
-    def suggest_commands(self, partial: str) -> List[str]:
-        """Suggest possible commands based on partial input."""
-        suggestions = []
-
-        # Suggest apps
-        for app_name in self.apps:
-            if app_name.startswith(partial):
-                suggestions.append(app_name)
-
-        # Suggest system commands
-        for cmd in self.system_commands:
-            if cmd.startswith(partial):
-                suggestions.append(cmd)
-
-        return suggestions

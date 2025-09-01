@@ -1,8 +1,6 @@
 """App discovery - find and run stuff in ./apps."""
 
 import ast
-import importlib.util
-import inspect
 import os
 import subprocess
 import tomllib

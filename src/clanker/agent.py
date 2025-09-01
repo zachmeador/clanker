@@ -1,6 +1,5 @@
 """Clanker agent with natural language processing capabilities."""
 
-import asyncio
 from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent
 from .models import create_agent as create_pydantic_agent, ModelTier
@@ -88,7 +87,7 @@ Available tools will be provided automatically based on context."""
             logger.error(f"Agent request failed: {str(e)}", exc_info=True)
             return f"I encountered an error: {str(e)}"
     
-    async def handle_request_async(self, request: str, context: List[Dict[str, Any]] = None) -> Any:
+    async def handle_request_async(self, request: str, context: Optional[List[Dict[str, Any]]] = None) -> Any:
         """Handle a natural language request asynchronously.
 
         Args:
