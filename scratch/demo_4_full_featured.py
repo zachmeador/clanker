@@ -7,7 +7,8 @@ UX Pattern: Full Featured Chat with Streaming, Context, and Tool Visibility
 """
 
 import asyncio
-import time
+import sys
+from io import StringIO
 from typing import List, Dict, Any, Optional
 from collections import deque
 from rich.console import Console
@@ -31,8 +32,58 @@ from pydantic_ai.messages import (
 
 from clanker.models import ModelTier, create_agent
 from clanker.tools import create_clanker_toolset
+from clanker import apps
+import subprocess
 
 console = Console()
+
+# Store original run function
+_original_run = apps.run
+
+# Monkey-patch the run function to capture subprocess output
+def patched_run(app_name: str, args: list = None) -> int:
+    """Patched version of apps.run that captures subprocess output"""
+    # Get apps
+    apps_dict = apps.discover()
+    
+    if app_name not in apps_dict:
+        return 1
+    
+    app = apps_dict[app_name]
+    if not app.get("entry"):
+        return 1
+    
+    # Build command
+    cmd = app["entry"]
+    if args:
+        cmd += " " + " ".join(args)
+    
+    # Clean environment
+    import os
+    env = os.environ.copy()
+    env.pop('VIRTUAL_ENV', None)
+    
+    try:
+        # Run with captured output instead of inheriting terminal
+        result = subprocess.run(
+            cmd, 
+            shell=True, 
+            env=env,
+            capture_output=True,  # Capture stdout and stderr
+            text=True
+        )
+        
+        # Store the output in a global variable for later display
+        global _last_tool_output
+        _last_tool_output = result.stdout + result.stderr
+        
+        return result.returncode
+    except Exception:
+        return 1
+
+# Apply the monkey-patch
+apps.run = patched_run
+_last_tool_output = ""
 
 
 class StreamingContextAgent:
@@ -53,6 +104,9 @@ class StreamingContextAgent:
         # Get toolset
         toolset = create_clanker_toolset()
         
+        # For now, skip wrapping - tools are complex objects
+        # We'll rely on message parsing after execution
+        
         # Create agent with toolset
         self.agent = create_agent(
             self.model_tier,
@@ -63,60 +117,101 @@ class StreamingContextAgent:
     async def handle_with_streaming(self, request: str):
         """Handle request with streaming response and tool visibility"""
         
-        # Build context-aware prompt if we have history
-        if self.history and self._is_continuation(request):
-            context_prompt = f"Continuing from our discussion about {self.last_topic}: {request}"
-        else:
-            context_prompt = request
+        # Build context-aware prompt
+        context_prompt = request
+        
+        # Add conversation context if we have history
+        if self.history:
+            if self._is_continuation(request):
+                # This is a continuation - add explicit context
+                context_prompt = f"Continuing from our discussion about {self.last_topic}: {request}"
+            
+            # Add recent conversation summary for context
+            recent_context = "\n[Previous context: "
+            for exchange in list(self.history)[-2:]:  # Last 2 exchanges
+                if exchange.get('tools'):
+                    tools_used = ', '.join(t['name'] for t in exchange['tools'])
+                    recent_context += f"User asked '{exchange['user'][:30]}...', you used tools: {tools_used}. "
+                else:
+                    recent_context += f"User asked '{exchange['user'][:30]}...'. "
+            recent_context += "]\n"
+            
+            if len(self.history) > 0:
+                context_prompt = recent_context + context_prompt
         
         # Track what's happening
         tool_calls = []
         response_text = ""
+        tool_output = ""
         
         try:
             # Show pending indicator
             console.print("\n[dim]Thinking...[/dim]", end="\r")
             
-            # Run the agent asynchronously
+            # Reset the global tool output capture
+            global _last_tool_output
+            _last_tool_output = ""
+            
+            # Run the agent (tools will execute here with output captured by our patch)
             result = await self.agent.run(context_prompt)
             
-            # Clear the pending indicator and show Clanker prompt
-            console.print(" " * 20, end="\r")  # Clear the line
-            console.print("[bold cyan]Clanker[/bold cyan]: ", end="")
+            # Get the captured tool output
+            tool_output = _last_tool_output
             
-            # Check if there were tool calls in the result
-            # This is a simplified version - real implementation would parse messages
-            if hasattr(result, '_messages'):
-                for msg in result._messages:
+            # Clear the pending indicator
+            console.print(" " * 20, end="\r")  # Clear the line
+            
+            # Parse and display tool calls with captured output
+            try:
+                messages_to_parse = result.new_messages()
+                for msg in messages_to_parse:
                     if hasattr(msg, 'parts'):
                         for part in msg.parts:
                             if isinstance(part, ToolCallPart):
-                                # Show tool being called
-                                console.print(f"\n[dim yellow]→ Calling tool: {part.tool_name}[/dim yellow]")
+                                # Show tool that was called
+                                console.print(f"[dim yellow]→ Calling: {part.tool_name}[/dim yellow]", end="")
                                 if part.args:
-                                    args_str = json.dumps(part.args, indent=2)
-                                    console.print(f"[dim]  Args: {args_str}[/dim]")
+                                    if isinstance(part.args, dict) and part.args:
+                                        args_str = ', '.join(f"{k}={v}" for k, v in part.args.items())
+                                        console.print(f"[dim yellow]({args_str})[/dim yellow]")
+                                    else:
+                                        console.print()
+                                else:
+                                    console.print()
+                                
                                 tool_calls.append({
                                     'name': part.tool_name,
                                     'args': part.args
                                 })
-                            elif isinstance(part, ToolReturnPart):
-                                # Show tool result
-                                console.print(f"[dim green]← Tool result received[/dim green]")
-                                if hasattr(part, 'content') and part.content:
-                                    console.print(f"[dim]  {str(part.content)[:100]}...[/dim]")
+            except:
+                pass  # Continue if we can't parse messages
+            
+            # Now show the captured tool output if any
+            if tool_output and tool_output.strip():
+                console.print("[dim green]← Tool output:[/dim green]")
+                # Show first few lines of captured output
+                output_lines = tool_output.strip().split('\n')[:3]
+                for line in output_lines:
+                    if line.strip():
+                        console.print(f"[dim]   {line[:80]}{'...' if len(line) > 80 else ''}[/dim]")
+                if len(tool_output.strip().split('\n')) > 3:
+                    console.print("[dim]   ...[/dim]")
+            
+            # Now show the Clanker prompt
+            console.print("[bold cyan]Clanker[/bold cyan]: ", end="")
             
             # Stream the response text  
-            # The agent returns a RunResult with data attribute
-            if hasattr(result, 'data'):
-                response_text = result.data
-            elif hasattr(result, 'output'):
+            # Use the output attribute from RunResult (not data!)
+            if hasattr(result, 'output'):
                 response_text = result.output
+            elif hasattr(result, 'data'):
+                response_text = result.data
             else:
+                # Try converting to string as last resort
                 response_text = str(result)
             
-            # Handle case where response might be None
-            if response_text is None:
+            # Handle case where response might be None or empty
+            if not response_text:
                 response_text = "I processed your request but have no text response."
             await self._stream_response(str(response_text))
             
@@ -124,7 +219,8 @@ class StreamingContextAgent:
             self.history.append({
                 "user": request,
                 "assistant": response_text,
-                "tools": tool_calls
+                "tools": tool_calls,
+                "tool_output": tool_output.strip() if tool_output else None
             })
             
             # Update topic tracking
@@ -176,9 +272,26 @@ class StreamingContextAgent:
         for i, exchange in enumerate(self.history, 1):
             console.print(f"\n[dim]Exchange {i}:[/dim]")
             console.print(f"  You: {exchange['user'][:60]}...")
-            console.print(f"  Clanker: {exchange['assistant'][:60]}...")
+            
+            # Show tools if used
             if exchange.get('tools'):
-                console.print(f"  [dim yellow]Tools used: {', '.join(t['name'] for t in exchange['tools'])}[/dim yellow]")
+                for tool in exchange['tools']:
+                    console.print(f"  [dim yellow]→ {tool['name']}", end="")
+                    if tool.get('args'):
+                        # Show condensed args
+                        if isinstance(tool['args'], dict) and tool['args']:
+                            args_preview = ', '.join(f"{k}={v}" for k, v in list(tool['args'].items())[:2])
+                            console.print(f"({args_preview})[/dim yellow]")
+                        else:
+                            console.print("[/dim yellow]")
+                # Show tool output preview if available
+                if exchange.get('tool_output'):
+                    first_line = exchange['tool_output'].split('\n')[0][:50]
+                    console.print(f"  [dim green]← {first_line}...[/dim green]")
+            
+            # Show response preview
+            response_preview = str(exchange['assistant'])[:60] if exchange['assistant'] else "No response"
+            console.print(f"  Clanker: {response_preview}...")
         
         if self.last_topic:
             console.print(f"\n[dim]Current topic: {self.last_topic}[/dim]")

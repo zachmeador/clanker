@@ -14,10 +14,12 @@
 - there's a great pattern idea in my head. clanker scaffolds out an app, creates the dir and stuff, then creates a llm-cli instance with a custom context explaining, then the user continues developing with that.
     - when clanker is prompted to work on a new app? 
 - there needs to be a central abstraction for the available model types to clanker and its apps. a smart and simple design for knowing what ai providers the user has given clanker, and what their available models are. 
-- there needs to be a central simple abstraction for logging. use loguru i guess because it's clean.
-- a universal way to always have something like a CLAUDE.md
-- on `clanker` run it should check what apps exist
-    - we need some sort of SIMPLE app abstraction
+- a universal way to always have something like a CLAUDE.md. INSTRUCTIONS.md could be the general term.
+- what is a conversation in clanker?
+    - user runs `clanker what are my apps` this is a conversation
+    - multi-step: `clanker add a good spaghetti recipe` -> clanker responds conversationally with user `how's this? x` -> user approves
+    - multi-agent-multi-step: when clanker runs an app that's an agent, the agent asks 
+    - what is this fundamentally, functionally?
 
 ### boring things
 
