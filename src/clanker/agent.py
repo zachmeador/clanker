@@ -24,7 +24,6 @@ class ClankerAgent:
         self.model_tier = model_tier
         self.tool_registry = ToolRegistry()
         self.input_resolver = InputResolver()
-        self.conversation_history: List[Dict[str, Any]] = []
 
         # Register core tools first
         self._register_core_tools()
@@ -58,12 +57,7 @@ class ClankerAgent:
         self.tool_registry.register(app_tool)
         logger.info(f"Registered generic AppTool: {app_tool.name}")
 
-        # TODO: Re-enable when security is hardened
-        # # Register bash tool for safe operations
-        # self.tool_registry.register(BashTool())
 
-        # # Register dev tool for LLM delegation
-        # self.tool_registry.register(LLMDevTool())
 
         # Register specific app tools for better UX
         discovered_apps = discover()
@@ -123,39 +117,6 @@ Available tools will be provided automatically based on context."""
             logger.error(f"Agent request failed: {str(e)}", exc_info=True)
             return f"I encountered an error: {str(e)}"
 
-    def handle_structured_input(self, input_tokens: List[str]) -> Dict[str, Any]:
-        """Handle structured input (commands) with fallback to agent.
-
-        Args:
-            input_tokens: Tokenized input
-
-        Returns:
-            Dict with handling information
-        """
-        resolution = self.input_resolver.resolve(input_tokens)
-
-        if resolution["type"] == "natural_language":
-            # Convert to async call result
-            async def get_response():
-                return await self.handle_request(resolution["request"])
-
-            # For now, return the resolution - CLI will handle async
-            return resolution
-
-        return resolution
-
     def get_available_tools(self) -> Dict[str, str]:
         """Get information about available tools."""
         return self.tool_registry.get_tool_info()
-
-    def clear_conversation(self) -> None:
-        """Clear conversation history."""
-        self.conversation_history.clear()
-
-    def get_conversation_summary(self) -> str:
-        """Get a summary of the current conversation."""
-        if not self.conversation_history:
-            return "No conversation history"
-
-        user_messages = [msg for msg in self.conversation_history if msg["role"] == "user"]
-        return f"Conversation with {len(user_messages)} user messages"

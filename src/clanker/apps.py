@@ -46,11 +46,11 @@ def _inspect_app(path: Path) -> Optional[dict]:
     try:
         with open(pyproject_path, 'rb') as f:
             pyproject = tomllib.load(f)
-            
+
         # Get description from project metadata
         project = pyproject.get("project", {})
         info["description"] = project.get("description", "")
-        
+
         # Check for script entry points
         scripts = project.get("scripts", {})
         if scripts:
@@ -58,7 +58,7 @@ def _inspect_app(path: Path) -> Optional[dict]:
             script_name = next(iter(scripts.keys()))
             info["entry"] = f"cd {path} && uv run {script_name}"
             return info
-    except:
+    except (FileNotFoundError, tomllib.TOMLKitError, KeyError):
         pass
     
     # Find entry file and try to extract typer commands
@@ -106,7 +106,7 @@ def _has_main_guard(py_file: Path) -> bool:
     try:
         content = py_file.read_text()
         return "__name__" in content and "__main__" in content
-    except:
+    except (FileNotFoundError, PermissionError, UnicodeDecodeError):
         return False
 
 
@@ -121,7 +121,7 @@ def _get_description(py_file: Path) -> Optional[str]:
                 line = line.strip()
                 if line:
                     return line
-    except:
+    except (FileNotFoundError, PermissionError, UnicodeDecodeError, SyntaxError):
         pass
     return None
 
@@ -173,25 +173,12 @@ def _extract_typer_commands(py_file: Path) -> Optional[List[str]]:
                         commands.append(node.name)
         
         return commands if commands else None
-    except:
+    except (FileNotFoundError, PermissionError, UnicodeDecodeError, SyntaxError, AttributeError):
         # Silently fail - app might not use typer or might have parsing issues
         return None
 
 
-def _get_description_from_dir(path: Path) -> Optional[str]:
-    """Try to find description in README or similar."""
-    for readme in ["README.md", "README.txt", "readme.md", "README"]:
-        readme_path = path / readme
-        if readme_path.exists():
-            try:
-                lines = readme_path.read_text().split('\n')
-                for line in lines:
-                    line = line.strip().lstrip('#').strip()
-                    if line:
-                        return line
-            except:
-                pass
-    return None
+
 
 
 def run(app_name: str, args: List[str] = None) -> int:
