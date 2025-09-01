@@ -116,8 +116,8 @@ def main(
             agent = state.get_agent()
             logger.debug("Calling agent.handle_request()")
             result = agent.handle_request(resolution["request"])
-            logger.debug(f"Agent returned result: '{result[:100]}...'")
-            typer.echo(result)
+            logger.debug(f"Agent returned result: '{result['response'][:100]}...'")
+            typer.echo(result['response'])
         except Exception as e:
             logger.error(f"CLI natural language handling failed: {str(e)}", exc_info=True)
             typer.echo(f"Error: {e}", err=True)
@@ -226,15 +226,14 @@ def handle_models_command(args: List[str]):
                 typer.echo(f"    - {model}")
 
 
-
-
 # Remove old typer commands - everything goes through main now
 
 
 def main():
-    """Entry point."""
+    """Entry point for the clanker CLI."""
     app()
 
 
 if __name__ == "__main__":
     main()
+

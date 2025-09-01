@@ -10,8 +10,8 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 
 from pydantic_ai.messages import ToolCallPart
-from .models import ModelTier, create_agent
-from .tools import create_clanker_toolset
+from .models import ModelTier
+from .agent import ClankerAgent
 from .logger import get_logger
 
 logger = get_logger("console")
@@ -35,20 +35,9 @@ class InteractiveConsole:
         self.setup_agent()
         
     def setup_agent(self):
-        """Set up the pydantic-ai agent with tools."""
-        system_prompt = """You are Clanker, an AI-powered development environment assistant.
-        You have access to tools for running apps and helping with development tasks.
-        Be direct, helpful, and concise."""
-        
-        # Get toolset
-        toolset = create_clanker_toolset()
-        
-        # Create agent with toolset
-        self.agent = create_agent(
-            self.model_tier,
-            system_prompt=system_prompt,
-            toolsets=[toolset]
-        )
+        """Set up the clanker agent with tools."""
+        # Create ClankerAgent with the specified model tier
+        self.agent = ClankerAgent(self.model_tier)
         logger.info("Interactive console agent initialized")
     
     async def handle_request(self, request: str) -> tuple[str, list]:
@@ -82,61 +71,31 @@ class InteractiveConsole:
             if len(self.history) > 0:
                 context_prompt = recent_context + context_prompt
         
-        # Track what's happening
-        tool_calls = []
-        response_text = ""
-        tool_output = ""
-        
         try:
             # Show pending indicator
             console.print("\n[dim]Thinking...[/dim]", end="\r")
-            
-            # Capture stdout/stderr during agent.run() to control tool output
-            captured_stdout = StringIO()
-            captured_stderr = StringIO()
-            old_stdout = sys.stdout
-            old_stderr = sys.stderr
-            sys.stdout = captured_stdout
-            sys.stderr = captured_stderr
-            
-            try:
-                # Run the agent (tools will execute here with output captured)
-                result = await self.agent.run(context_prompt)
-            finally:
-                # Restore stdout and stderr
-                sys.stdout = old_stdout
-                sys.stderr = old_stderr
-                tool_output = captured_stdout.getvalue() + captured_stderr.getvalue()
-            
+
+            # Run the agent (now returns structured result)
+            result = await self.agent.handle_request_async(context_prompt)
+
             # Clear the pending indicator
             console.print(" " * 20, end="\r")  # Clear the line
-            
-            # Parse and display tool calls
-            try:
-                messages_to_parse = result.new_messages()
-                for msg in messages_to_parse:
-                    if hasattr(msg, 'parts'):
-                        for part in msg.parts:
-                            if isinstance(part, ToolCallPart):
-                                # Show tool that was called
-                                console.print(f"[dim yellow]→ Calling: {part.tool_name}[/dim yellow]", end="")
-                                if part.args:
-                                    if isinstance(part.args, dict) and part.args:
-                                        args_str = ', '.join(f"{k}={v}" for k, v in part.args.items())
-                                        console.print(f"[dim yellow]({args_str})[/dim yellow]")
-                                    else:
-                                        console.print()
-                                else:
-                                    console.print()
-                                
-                                tool_calls.append({
-                                    'name': part.tool_name,
-                                    'args': part.args
-                                })
-            except Exception as e:
-                logger.debug(f"Could not parse tool calls: {e}")
-            
-            # Show captured tool output if any
+
+            # Get data from structured result
+            response_text = result['response']
+            tool_calls = result['tool_calls']
+            tool_output = result['tool_output']
+
+            # Display tool calls
+            for tool in tool_calls:
+                tool_name = tool['name']
+                if tool.get('args') and isinstance(tool['args'], dict) and tool['args']:
+                    args_str = ', '.join(f"{k}={v}" for k, v in tool['args'].items())
+                    console.print(f"[dim yellow]→ Calling: {tool_name}({args_str})[/dim yellow]")
+                else:
+                    console.print(f"[dim yellow]→ Calling: {tool_name}[/dim yellow]")
+
+            # Show tool output if any
             if tool_output and tool_output.strip():
                 console.print("[dim green]← Tool output:[/dim green]")
                 # Show first few lines of captured output
@@ -146,23 +105,11 @@ class InteractiveConsole:
                         console.print(f"[dim]   {line[:80]}{'...' if len(line) > 80 else ''}[/dim]")
                 if len(tool_output.strip().split('\n')) > 3:
                     console.print("[dim]   ...[/dim]")
-            
-            # Get the response text
-            if hasattr(result, 'output'):
-                response_text = result.output
-            elif hasattr(result, 'data'):
-                response_text = result.data
-            else:
-                response_text = str(result)
-            
-            # Handle case where response might be None or empty
-            if not response_text:
-                response_text = "I processed your request but have no text response."
-            
+
             # Display response with streaming effect
             console.print("[bold cyan]Clanker[/bold cyan]: ", end="")
             await self._stream_response(str(response_text))
-            
+
             # Update history
             self.history.append({
                 "user": request,
@@ -170,10 +117,10 @@ class InteractiveConsole:
                 "tools": tool_calls,
                 "tool_output": tool_output.strip() if tool_output else None
             })
-            
+
             # Update topic tracking
             self._update_topic(request)
-            
+
             return response_text, tool_calls
             
         except Exception as e:
@@ -232,14 +179,12 @@ class InteractiveConsole:
             # Show tools if used
             if exchange.get('tools'):
                 for tool in exchange['tools']:
-                    console.print(f"  [dim yellow]→ {tool['name']}", end="")
-                    if tool.get('args'):
-                        # Show condensed args
-                        if isinstance(tool['args'], dict) and tool['args']:
-                            args_preview = ', '.join(f"{k}={v}" for k, v in list(tool['args'].items())[:2])
-                            console.print(f"({args_preview})[/dim yellow]")
-                        else:
-                            console.print("[/dim yellow]")
+                    tool_name = tool['name']
+                    if tool.get('args') and isinstance(tool['args'], dict) and tool['args']:
+                        args_preview = ', '.join(f"{k}={v}" for k, v in list(tool['args'].items())[:2])
+                        console.print(f"  [dim yellow]→ {tool_name}({args_preview})[/dim yellow]")
+                    else:
+                        console.print(f"  [dim yellow]→ {tool_name}[/dim yellow]")
                 # Show tool output preview if available
                 if exchange.get('tool_output'):
                     first_line = exchange['tool_output'].split('\n')[0][:50]
@@ -255,13 +200,18 @@ class InteractiveConsole:
     def show_available_tools(self):
         """Display available tools."""
         console.print("\n[bold]Available Tools[/bold]")
-        
-        # Get tools from agent's toolset
-        if hasattr(self.agent, '_function_tools'):
-            for tool_name, tool_def in self.agent._function_tools.items():
-                console.print(f"  • [cyan]{tool_name}[/cyan]")
-                if hasattr(tool_def, 'description'):
-                    console.print(f"    [dim]{tool_def.description}[/dim]")
+
+        # Get tools from the second toolset (our FunctionToolset)
+        if hasattr(self.agent, 'toolsets') and len(self.agent.toolsets) > 1:
+            # toolsets[1] should be our FunctionToolset with the CLI export tools
+            toolset = self.agent.toolsets[1]
+            if hasattr(toolset, 'tools') and toolset.tools:
+                for tool_name, tool in toolset.tools.items():
+                    console.print(f"  • [cyan]{tool_name}[/cyan]")
+                    if hasattr(tool, '__doc__') and tool.__doc__:
+                        console.print(f"    [dim]{tool.__doc__}[/dim]")
+            else:
+                console.print("[dim]No tools configured[/dim]")
         else:
             console.print("[dim]No tools configured[/dim]")
     

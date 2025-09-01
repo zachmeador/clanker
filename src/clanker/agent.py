@@ -2,10 +2,10 @@
 
 from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent
+from pydantic_ai.messages import ModelMessagesTypeAdapter
+
 from .models import create_agent as create_pydantic_agent, ModelTier
 from .tools import create_clanker_toolset
-from .apps import discover
-from .input_resolution import InputResolver
 from .logger import get_logger
 
 logger = get_logger("agent")
@@ -21,7 +21,7 @@ class ClankerAgent:
             model_tier: The model tier to use for the agent
         """
         self.model_tier = model_tier
-        self.input_resolver = InputResolver()
+        self.message_history = []  # Pydantic-ai message history for persistence
 
         # Initialize the pydantic-ai agent with toolsets
         self._setup_agent()
@@ -43,83 +43,137 @@ class ClankerAgent:
 
     def _get_system_prompt(self) -> str:
         """Get the system prompt for the agent."""
-        available_apps = self.input_resolver.get_available_apps()
-
-        return f"""You are Clanker, an AI-powered development environment.
+        return """You are Clanker, an AI-powered development environment.
 
 Your capabilities:
-- Run clanker apps: {', '.join(available_apps) if available_apps else 'No apps available'}
-- Help with development tasks using available apps
+- Run clanker apps using available tools
+- Help with development tasks
 
 CRITICAL INSTRUCTIONS:
-- When users ask to run, launch, execute, or use any app, use the specific app tool (e.g., run_recipes, run_resumes)
+- When users ask to run, launch, execute, or use any app, use the specific app tool
 - Do NOT respond conversationally when a tool should be used
-- Available apps: {', '.join(available_apps) if available_apps else 'none'}
+- Available tools are provided automatically
 
 Guidelines:
 - Be helpful and direct
-- Use app-specific tools for app-related requests
-- Always explain what you're doing after using tools
+- Use tools for app-related requests
+- Explain what you're doing after using tools"""
 
-Available tools will be provided automatically based on context."""
-
-    def handle_request(self, request: str) -> str:
+    def handle_request(self, request: str) -> dict:
         """Handle a natural language request.
 
         Args:
             request: The user's natural language request
 
         Returns:
-            The agent's response
+            Dict with keys: 'response', 'tool_calls', 'tool_output'
         """
         logger.info(f"Processing request: '{request}'")
 
         try:
-            logger.debug("Calling agent.run_sync()")
-            # Run the agent synchronously (following pydantic-ai patterns)
-            result = self.agent.run_sync(request)
-            logger.debug(f"Agent returned result with output length: {len(result.output)}")
+            logger.debug("Calling agent.run_sync() with message history")
+            # Run the agent with conversation history
+            result = self.agent.run_sync(request, message_history=self.message_history)
+
+            # Update message history for future conversations
+            self.message_history = result.new_messages()
+
+            # Extract tool call information for console display
+            tool_calls = []
+            tool_output = ""
+
+            # Parse tool calls from the result messages
+            for msg in result.new_messages():
+                if hasattr(msg, 'parts'):
+                    for part in msg.parts:
+                        if hasattr(part, 'tool_name') and hasattr(part, 'args'):
+                            # This is a tool call
+                            tool_calls.append({
+                                'name': part.tool_name,
+                                'args': part.args
+                            })
+                            # For CLI export tools, we can capture output here
+                            # (In a more complete implementation, we'd capture tool stdout)
+                            if hasattr(part, 'tool_name') and 'example_' in part.tool_name:
+                                # This would be where we capture actual tool output
+                                # For now, we'll leave tool_output empty as the agent handles it
+                                pass
+
+            response_text = result.output if hasattr(result, 'output') else str(result)
+            if not response_text:
+                response_text = "I processed your request but have no text response."
+
+            logger.debug(f"Agent returned result with output length: {len(response_text)}")
             logger.info(f"Request completed successfully")
 
-            return result.output
+            return {
+                'response': response_text,
+                'tool_calls': tool_calls,
+                'tool_output': tool_output
+            }
 
         except Exception as e:
             logger.error(f"Agent request failed: {str(e)}", exc_info=True)
-            return f"I encountered an error: {str(e)}"
-    
-    async def handle_request_async(self, request: str, context: Optional[List[Dict[str, Any]]] = None) -> Any:
+            return {
+                'response': f"I encountered an error: {str(e)}",
+                'tool_calls': [],
+                'tool_output': ""
+            }
+
+    async def handle_request_async(self, request: str) -> dict:
         """Handle a natural language request asynchronously.
 
         Args:
             request: The user's natural language request
-            context: Optional conversation context
 
         Returns:
-            The agent's result object (with output, messages, etc.)
+            Dict with keys: 'response', 'tool_calls', 'tool_output'
         """
         logger.info(f"Processing async request: '{request}'")
 
         try:
-            # Build context-aware prompt if context provided
-            prompt = request
-            if context:
-                # Add recent context to prompt
-                context_str = "Previous context: "
-                for exchange in context[-2:]:  # Last 2 exchanges
-                    context_str += f"User: {exchange.get('user', '')[:50]}... "
-                prompt = f"{context_str}\n{request}"
-            
-            logger.debug("Calling agent.run()")
-            # Run the agent asynchronously
-            result = await self.agent.run(prompt)
+            logger.debug("Calling agent.run() with message history")
+            # Run the agent with conversation history
+            result = await self.agent.run(request, message_history=self.message_history)
+
+            # Update message history for future conversations
+            self.message_history = result.new_messages()
+
+            # Extract tool call information for console display
+            tool_calls = []
+            tool_output = ""
+
+            # Parse tool calls from the result messages
+            for msg in result.new_messages():
+                if hasattr(msg, 'parts'):
+                    for part in msg.parts:
+                        if hasattr(part, 'tool_name') and hasattr(part, 'args'):
+                            # This is a tool call
+                            tool_calls.append({
+                                'name': part.tool_name,
+                                'args': part.args
+                            })
+
+            response_text = result.output if hasattr(result, 'output') else str(result)
+            if not response_text:
+                response_text = "I processed your request but have no text response."
+
             logger.debug(f"Agent returned result")
             logger.info(f"Async request completed successfully")
 
-            return result
+            return {
+                'response': response_text,
+                'tool_calls': tool_calls,
+                'tool_output': tool_output
+            }
 
         except Exception as e:
             logger.error(f"Async agent request failed: {str(e)}", exc_info=True)
-            raise
+            return {
+                'response': f"I encountered an error: {str(e)}",
+                'tool_calls': [],
+                'tool_output': ""
+            }
 
     def get_available_tools(self) -> Dict[str, str]:
         """Get information about available tools."""
@@ -130,3 +184,36 @@ Available tools will be provided automatically based on context."""
                 for tool_name, tool_obj in toolset.tools.items():
                     available_tools[tool_name] = tool_obj.description or f"Tool: {tool_name}"
         return available_tools
+
+    def save_conversation(self, filepath: str) -> None:
+        """Save current conversation history to file."""
+        try:
+            import json
+            from pydantic_core import to_jsonable_python
+
+            json_data = to_jsonable_python(self.message_history)
+            with open(filepath, 'w') as f:
+                json.dump(json_data, f, indent=2)
+            logger.info(f"Conversation saved to {filepath}")
+        except Exception as e:
+            logger.error(f"Failed to save conversation: {e}")
+
+    def load_conversation(self, filepath: str) -> None:
+        """Load conversation history from file."""
+        try:
+            import json
+
+            with open(filepath, 'r') as f:
+                json_data = json.load(f)
+
+            self.message_history = ModelMessagesTypeAdapter.validate_python(json_data)
+            logger.info(f"Conversation loaded from {filepath}")
+        except FileNotFoundError:
+            logger.info(f"No conversation file found at {filepath}")
+        except Exception as e:
+            logger.error(f"Failed to load conversation: {e}")
+
+    def clear_conversation(self) -> None:
+        """Clear the conversation history."""
+        self.message_history = []
+        logger.info("Conversation history cleared")
