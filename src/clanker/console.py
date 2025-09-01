@@ -202,14 +202,16 @@ class InteractiveConsole:
         console.print("\n[bold]Available Tools[/bold]")
 
         # Get tools from the second toolset (our FunctionToolset)
-        if hasattr(self.agent, 'toolsets') and len(self.agent.toolsets) > 1:
+        if hasattr(self.agent, 'agent') and hasattr(self.agent.agent, 'toolsets') and len(self.agent.agent.toolsets) > 1:
             # toolsets[1] should be our FunctionToolset with the CLI export tools
-            toolset = self.agent.toolsets[1]
+            toolset = self.agent.agent.toolsets[1]
             if hasattr(toolset, 'tools') and toolset.tools:
                 for tool_name, tool in toolset.tools.items():
                     console.print(f"  • [cyan]{tool_name}[/cyan]")
-                    if hasattr(tool, '__doc__') and tool.__doc__:
-                        console.print(f"    [dim]{tool.__doc__}[/dim]")
+                    # Use the tool's description or function docstring for better info
+                    description = getattr(tool, 'description', None) or getattr(tool.function, '__doc__', None)
+                    if description and description != "A tool function for an agent.":
+                        console.print(f"    [dim]{description}[/dim]")
             else:
                 console.print("[dim]No tools configured[/dim]")
         else:
