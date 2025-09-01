@@ -11,3 +11,8 @@ wheels/
 uv.lock
 .python-version
 .env
+
+# Data and logs
+data/
+*.log
+*.log.*

@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional, Union
 import sqlite3
 from contextlib import contextmanager
 
+from ..profile import Profile
+
 
 class AppVault:
     """Document storage context for a specific app.
@@ -233,27 +235,15 @@ class AppVault:
 class Vault:
     """Main document storage interface for clanker."""
     
-    def __init__(self):
-        # Find project root by looking for pyproject.toml or .git
-        current = Path(__file__).resolve().parent
-        project_root = None
+    def __init__(self, profile: Optional[Profile] = None):
+        # Use provided profile or get current one
+        self.profile = profile or Profile.current()
         
-        while current != current.parent:
-            if (current / "pyproject.toml").exists() or (current / ".git").exists():
-                project_root = current
-                break
-            current = current.parent
+        # Use profile paths
+        self.vault_root = self.profile.vault_root
+        self.db_path = self.profile.db_path
         
-        if project_root is None:
-            # Fallback to parent of src directory
-            project_root = Path(__file__).parent.parent.parent.parent
-        
-        # Use data/default directory for storage
-        data_dir = project_root / "data" / "default"
-        self.vault_root = data_dir / "vault"
-        self.db_path = data_dir / "clanker.db"
-        
-        # Create vault root if needed
+        # Create vault root if needed (profile already ensures this, but be safe)
         self.vault_root.mkdir(parents=True, exist_ok=True)
         
         # Initialize permission tables

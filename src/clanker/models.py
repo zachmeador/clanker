@@ -13,7 +13,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.anthropic import AnthropicModel
-from pydantic_ai.models.gemini import GeminiModel
+from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.groq import GroqModel
 from pydantic_ai.models.mistral import MistralModel
 
@@ -144,15 +144,7 @@ def _create_model(model_str: str) -> Model:
     elif provider == "google":
         from pydantic_ai.providers.google import GoogleProvider
         google_provider = GoogleProvider(api_key=api_key)
-        return GeminiModel(model_name, provider=google_provider)
-    elif provider == "groq":
-        from pydantic_ai.providers.groq import GroqProvider
-        groq_provider = GroqProvider(api_key=api_key)
-        return GroqModel(model_name, provider=groq_provider)
-    elif provider == "mistral":
-        from pydantic_ai.providers.mistral import MistralProvider
-        mistral_provider = MistralProvider(api_key=api_key)
-        return MistralModel(model_name, provider=mistral_provider)
+        return GoogleModel(model_name, provider=google_provider)
     else:
         raise ValueError(
             f"Unknown provider '{provider}'. "
