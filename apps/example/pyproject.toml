@@ -1,0 +1,12 @@
+[project]
+name = "example"
+version = "0.1.0"
+description = "Example app to test discovery"
+requires-python = ">=3.13"
+dependencies = [
+    "clanker",
+    "typer",
+]
+
+[tool.uv.sources]
+clanker = { path = "../../", editable = true }

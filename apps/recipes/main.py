@@ -10,8 +10,8 @@ from pydantic_ai import Agent
 from rich.console import Console
 from rich.markdown import Markdown
 
-from .models import LogEntry, RecipeContent
-from .storage import RecipeStorage
+from recipes.models import LogEntry, RecipeContent
+from recipes.storage import RecipeStorage
 
 logger = get_logger("recipes")
 

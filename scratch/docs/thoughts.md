@@ -61,4 +61,6 @@ what clanker doesn't do
 - duplicate effort having its own chat tui. there are other llm clis.
 - have an advanced ui for app management or other clanker things. 
 
+# fake user "stories"
 
+- semi-technical user types in `clanker make a fun geocities style website about penguins`. what happens? what are they expecting?

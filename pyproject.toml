@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
-clanker = "clanker:main"
+clanker = "clanker.cli:main"
 
 [build-system]
 requires = ["hatchling"]
