@@ -21,18 +21,32 @@
     - multi-agent-multi-step: when clanker runs an app that's an agent, the agent asks 
     - what is this fundamentally, functionally?
 
-### boring things
+#### the big topic of what clanker apps are and how they integrate
 
-- cli interface in apps should be typer by default
+- the user can always add an app to apps/, but they only get integrated into clanker's tool context if the user `export`s them through a clanker convention
+    - user can export "functions" that are actually cli commands. the reason is clanker apps are in their own uv environment, with their own dependencies
+- all exported app functionality to clanker should work as an llm tool
+- example of what i'm imagining:
+    - user: `clanker heres a paste of my grandma's chicken noodle soup recipe [blah], add it to my recipes`
+    - clanker, having tools added, sees a `recipes_add` tool with a single string arg. 
+    - clanker writes the recipe to the tool to the best of its ability
+    - `recipes_add` takes it from there, provides some output back to clanker
+    - clanker sees tool completion and says something to user
+- clanker's example app should always be useful for understanding all of the main conventions
+
+what i DON'T want:
+
+- clanker apps to have their own 
+    - console tui
+    - cli additions to clanker (unnecessary rn, current functionality)
+    - to be designed to be called by humans directly
+
+the user is free to do whatever but this is not convention.
 
 ### needs
 
 - a simple constructor for project instructions. example: if user launcher claude code through clanker, CLAUDE.mds could be constructed. maybe have an INSTRUCTIONS.md in a dir, this gets copied into that dir's CLAUDE.md? not a fan of duplicating data but this would be git ignored
 - a comprehensive context for the app scaffold. ie what gets provided to the cli tool spawned from clanker.
-
-### immediate tasks
-
-- migrate old claudio apps. redo/change the dumb parts.
 
 # more thoughts
 
@@ -45,21 +59,11 @@ what clanker does
 - the clanker package is for core functionality
 - it assumes highly of the user
 - it assumes the user is using llms for nearly every possible task you can take in clanker
-- central ui is an llm chat
-    - so far this is a pain in the ass to think about. i almost want to hand off everything possible to ai cli tools if their context controls their behavior well enough
+- central ui is an llm chat console
 - other cli behavior spec:
     - clanker app list: list apps
-    - clanker profile list/set/add/remove (or something like that)
     - clanker launch claude/cursor/gemini launches, say, a claude code instance with system context explaining clanker
         - `clanker launch claude need to add an app that tells me if the weather is blahblah` adds request as user request to CC. (i think this is possible)
-    - the user can obviously also ask clanker to do these things for them
-- clanker has tool access
-    - unsure yet if i want to give a general bash tool or specific tools
-
-what clanker doesn't do
-
-- duplicate effort having its own chat tui. there are other llm clis.
-- have an advanced ui for app management or other clanker things. 
 
 # fake user "stories"
 

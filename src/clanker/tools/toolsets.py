@@ -1,15 +1,15 @@
-"""Simplified toolsets for clanker using Pydantic AI toolsets."""
+"""Export-based toolsets for clanker using Pydantic AI toolsets."""
 
 import subprocess
 import shlex
 import os
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable
 from pydantic_ai import RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
 from ..logger import get_logger
-from ..apps import discover
+from ..exports import get_app_exports, list_exported_apps, discover_and_import_apps, ExportMetadata
 
 logger = get_logger("toolsets")
 
@@ -108,70 +108,147 @@ def launch_dev_tool(
         return f"Failed to launch {tool_name}: {str(e)}"
 
 
-def create_dynamic_app_toolset():
-    """Dynamically create specific tools for each discovered app."""
-    from ..apps import discover, run
+def create_export_based_toolset():
+    """
+    Create toolset from exported functions.
 
-    tools = []
-    apps = discover()
+    This replaces the old dynamic discovery approach with a cleaner
+    export-based system where apps declare their functions explicitly.
+    """
+    tools = []  # Core tools - bash disabled for now
 
-    for app_name, app_info in apps.items():
-        desc = app_info.get("description", f"Run the {app_name} app")
-        commands = app_info.get("commands", [])
+    # Discover and import all apps to trigger export registration
+    discover_and_import_apps()
 
-        # Create tool function with proper closure
-        def app_tool(ctx: RunContext, args: str = "", app_name=app_name) -> str:
-            """Dynamically created tool for running a specific app."""
-            try:
-                arg_list = args.split() if args.strip() else []
-                returncode = run(app_name, arg_list)
+    # Get all exported apps
+    exported_apps = list_exported_apps()
 
-                if returncode == 0:
-                    return f"Successfully ran {app_name} app"
-                else:
-                    return f"{app_name} app completed with exit code {returncode}"
+    for app_name in exported_apps:
+        app_exports = get_app_exports(app_name)
+        if not app_exports:
+            continue
 
-            except Exception as e:
-                logger.error(f"Failed to run {app_name}: {e}", exc_info=True)
-                return f"Failed to run {app_name} app: {str(e)}"
+        # Get tool-exported functions
+        tool_functions = app_exports.get_tool_functions()
 
-        # Set metadata for the tool
-        app_tool.__name__ = f"run_{app_name}"
-        tool_desc = app_info.get("description", f"Run the {app_name} app")
-        cmd_str = f" Commands: {', '.join(commands)}" if commands else ""
-        app_tool.__doc__ = f"{tool_desc}.{cmd_str}"
+        for func_name, metadata in tool_functions.items():
+            # Create a tool wrapper for the exported function
+            def create_tool_wrapper(original_func: Callable, meta: ExportMetadata):
+                """Create a tool wrapper that handles parameter conversion."""
+                def tool_wrapper(ctx: RunContext, **kwargs):
+                    """Dynamically created tool from exported function."""
+                    try:
+                        # Convert string kwargs to appropriate types if needed
+                        processed_args = {}
+                        for param_name, param_value in kwargs.items():
+                            # Basic type conversion - could be enhanced
+                            if param_name in meta.parameters:
+                                param_info = meta.parameters[param_name]
+                                if param_info['type'] == 'Optional[str]' and param_value == '':
+                                    processed_args[param_name] = None
+                                else:
+                                    processed_args[param_name] = param_value
 
-        tools.append(app_tool)
+                        # Call the original function
+                        result = original_func(**processed_args)
+
+                        # Format result for agent consumption
+                        if isinstance(result, str):
+                            return result
+                        elif isinstance(result, dict):
+                            return str(result)
+                        else:
+                            return str(result)
+
+                    except Exception as e:
+                        logger.error(f"Error calling {meta.name}: {e}", exc_info=True)
+                        return f"Error executing {meta.name}: {str(e)}"
+
+                # Set metadata for the tool
+                tool_wrapper.__name__ = f"{app_name}_{meta.name}"
+                tool_wrapper.__doc__ = meta.description
+
+                return tool_wrapper
+
+            # Create and add the tool
+            tool_func = create_tool_wrapper(metadata.original_function, metadata)
+            tools.append(tool_func)
+            logger.debug(f"Added tool: {app_name}_{metadata.name}")
 
     return FunctionToolset(tools=tools)
 
 
+def create_dynamic_app_toolset():
+    """
+    Legacy function for backwards compatibility.
+    Now uses the export-based system instead of dynamic discovery.
+    """
+    logger.warning("create_dynamic_app_toolset is deprecated, use create_export_based_toolset instead")
+    return create_export_based_toolset()
+
+
 def create_clanker_toolset():
     """Create the main clanker toolset with all core tools."""
-    # Core tools (always available)
-    # core_tools = [bash, launch_dev_tool]
-    # TODO: User doesn't trust these tools yet.
-    core_tools = []
-
-    # Create dynamic app tools
-    dynamic_app_toolset = create_dynamic_app_toolset()
-
-    # Combine tools from both toolsets
-    all_tools = core_tools + list(dynamic_app_toolset.tools.values())
-
-    return FunctionToolset(tools=all_tools)
+    return create_export_based_toolset()
 
 
 def create_app_tools():
     """Create toolset for specific app tools (can be extended dynamically)."""
-    # For now, just return the core toolset
-    # This can be extended to create specific tools for each app
-    return create_clanker_toolset()
+    return create_export_based_toolset()
 
 
 def create_dev_tools():
     """Create toolset for development-specific tools."""
     return FunctionToolset(tools=[launch_dev_tool])
+
+
+def create_cli_runner_from_exports(app_name: str, command_name: str, **kwargs):
+    """
+    Execute an exported function as a CLI command.
+
+    This replaces the old app running mechanism with direct function calls.
+    """
+    try:
+        app_exports = get_app_exports(app_name)
+        if not app_exports:
+            return f"App '{app_name}' not found or has no exports"
+
+        cli_commands = app_exports.get_cli_commands()
+
+        if command_name not in cli_commands:
+            available = list(cli_commands.keys())
+            return f"Command '{command_name}' not found. Available: {', '.join(available)}"
+
+        metadata = cli_commands[command_name]
+        func = metadata.original_function
+
+        # Call the function with provided arguments
+        result = func(**kwargs)
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error running {app_name} {command_name}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+def list_available_exports():
+    """Get information about all available exported functions."""
+    # Ensure all apps are discovered and imported
+    discover_and_import_apps()
+
+    info = {}
+
+    exported_apps = list_exported_apps()
+    for app_name in exported_apps:
+        app_exports = get_app_exports(app_name)
+        if app_exports:
+            info[app_name] = {
+                'cli_commands': list(app_exports.get_cli_commands().keys()),
+                'tool_functions': list(app_exports.get_tool_functions().keys())
+            }
+
+    return info
 
 
 # Helper functions
@@ -228,16 +305,24 @@ def _generate_context(request: str, work_dir: Path) -> str:
     ]
 
     # Add available apps
-    apps = discover()
-    if apps:
-        for name, info in apps.items():
-            desc = info.get("description", "")
-            commands = info.get("commands", [])
-            context_parts.append(f"- **{name}**: {desc}")
-            if commands:
-                context_parts.append(f"  - Commands: {', '.join(commands)}")
-    else:
-        context_parts.append("- No apps discovered")
+    try:
+        from ..exports import list_exported_apps, get_app_exports
+        exported_apps = list_exported_apps()
+        if exported_apps:
+            for name in exported_apps:
+                app_exports = get_app_exports(name)
+                if app_exports:
+                    cli_cmds = list(app_exports.get_cli_commands().keys())
+                    tool_funcs = list(app_exports.get_tool_functions().keys())
+                    context_parts.append(f"- **{name}**:")
+                    if cli_cmds:
+                        context_parts.append(f"  - CLI: {', '.join(cli_cmds)}")
+                    if tool_funcs:
+                        context_parts.append(f"  - Tools: {', '.join(tool_funcs)}")
+        else:
+            context_parts.append("- No apps discovered")
+    except:
+        context_parts.append("- App discovery unavailable")
 
     context_parts.extend([
         "",
