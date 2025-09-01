@@ -19,21 +19,29 @@ VERSION = "0.1.0"
 APP_NAME = "Clanker"
 
 app = typer.Typer(help=f"{APP_NAME} - LLM app environment")
-apps = typer.Typer(help="Manage apps")
-app.add_typer(apps, name="apps")
 
 # Help text
 USAGE_TEXT = """{app_name} - LLM app environment
 
 Usage:
-  clanker [request]          - Natural language request
-  clanker app list           - List available apps
-  clanker run <app> [args]   - Run an app
-  clanker launch <tool>      - Launch dev tool
-  clanker models             - Show available models"""
+  clanker                    - Launch interactive console
+  clanker [request]          - Natural language request (one-shot)
+  clanker app <command>      - App management
+  clanker system <command>   - System management
 
-LAUNCH_USAGE = "Usage: clanker launch <tool> [request]"
-HELP_MESSAGE = "Use 'clanker --help' for help"
+App Commands:
+  clanker app list           - List available apps
+  clanker app run <name>     - Run an app
+  clanker app info <name>    - Show app details
+
+System Commands:
+  clanker system models      - Show available AI models
+  clanker system profile     - Manage profiles
+  clanker system config      - Configuration settings
+  clanker system help        - Show help
+  clanker system version     - Show version"""
+
+HELP_MESSAGE = "Use 'clanker system help' for help"
 
 
 @dataclass
@@ -71,8 +79,16 @@ def main(
         return
 
     if not args:
-        # No args provided, show help
-        typer.echo(ctx.get_help())
+        # No args provided, launch interactive console
+        try:
+            from .console import InteractiveConsole
+            console = InteractiveConsole()
+            asyncio.run(console.run())
+        except KeyboardInterrupt:
+            typer.echo("\nExiting...")
+        except Exception as e:
+            typer.echo(f"Error launching console: {e}", err=True)
+            raise typer.Exit(1)
         return
 
     # Create app state for this command execution
@@ -81,8 +97,19 @@ def main(
     # Resolve input type
     resolution = state.resolver.resolve(args)
 
-    if resolution["type"] == "natural_language":
-        # Handle as natural language request
+    if resolution["type"] == "system_command":
+        # Handle system or app commands
+        command = resolution["command"]
+        if command == "system":
+            handle_system_command(resolution["args"], state)
+        elif command == "app":
+            handle_app_command(resolution["args"], state)
+        else:
+            typer.echo(f"Unknown command: {command}")
+            raise typer.Exit(1)
+
+    elif resolution["type"] == "natural_language":
+        # Handle as natural language request (one-shot)
         logger.info(f"Natural language request: '{resolution['request']}'")
         try:
             logger.debug("Getting agent instance")
@@ -96,77 +123,73 @@ def main(
             typer.echo(f"Error: {e}", err=True)
             raise typer.Exit(1)
 
-    elif resolution["type"] == "app_command":
-        # Handle as app command
-        try:
-            exit_code = apps_module.run(resolution["app_name"], resolution["args"])
-            raise typer.Exit(exit_code)
-        except Exception as e:
-            typer.echo(f"Error running app: {e}", err=True)
-            raise typer.Exit(1)
-
-    elif resolution["type"] == "system_command":
-        # Handle system commands
-        handle_system_command(resolution["command"], resolution["args"], state)
-
-    elif resolution["type"] == "flag_command":
-        # Handle flags
-        handle_flag_command(resolution["flag"], resolution["args"], state)
-
     else:
         # Fallback
         typer.echo(f"Unknown command type: {resolution['type']}")
         raise typer.Exit(1)
 
 
-def handle_system_command(command: str, args: List[str], state: AppState):
+def handle_system_command(args: List[str], state: AppState):
     """Handle system commands."""
-    if command == "launch":
-        handle_launch_command(args, state)
-    elif command in ["app", "apps"]:
-        handle_app_command(args)
-    elif command == "profile":
-        handle_profile_command(args)
-    elif command == "config":
-        handle_config_command(args)
-    elif command == "models":
-        handle_models_command(args)
-    elif command in ["help", "--help"]:
-        typer.echo(HELP_MESSAGE)
-    elif command in ["version", "--version"]:
+    if not args:
+        typer.echo("System commands: models, profile, config, help, version")
+        return
+    
+    subcommand = args[0]
+    sub_args = args[1:] if len(args) > 1 else []
+    
+    if subcommand == "models":
+        handle_models_command(sub_args)
+    elif subcommand == "profile":
+        handle_profile_command(sub_args)
+    elif subcommand == "config":
+        handle_config_command(sub_args)
+    elif subcommand == "help":
+        typer.echo(USAGE_TEXT.format(app_name=APP_NAME))
+    elif subcommand == "version":
         typer.echo(f"{APP_NAME} {VERSION}")
     else:
-        typer.echo(f"Unknown system command: {command}")
+        typer.echo(f"Unknown system command: {subcommand}")
+        typer.echo("Available: models, profile, config, help, version")
 
 
-def handle_launch_command(args: List[str], state: AppState):
-    """Handle launch commands for dev tools."""
-    if not args:
-        typer.echo(LAUNCH_USAGE)
-        return
-
-    tool_name = args[0]
-    request = " ".join(args[1:]) if len(args) > 1 else ""
-
-    try:
-        agent = state.get_agent()
-        result = agent.handle_request(f"launch {tool_name} to {request}")
-        typer.echo(result)
-    except Exception as e:
-        typer.echo(f"Error launching tool: {e}", err=True)
-
-
-def handle_app_command(args: List[str]):
+def handle_app_command(args: List[str], state: AppState):
     """Handle app management commands."""
     if not args:
-        apps_module.list_apps()
+        typer.echo("App commands: list, run <name>, info <name>")
         return
-
+    
     subcommand = args[0]
+    sub_args = args[1:] if len(args) > 1 else []
+    
     if subcommand == "list":
         apps_module.list_apps()
+    elif subcommand == "run":
+        if not sub_args:
+            typer.echo("Usage: clanker app run <name> [args]")
+            return
+        app_name = sub_args[0]
+        app_args = sub_args[1:] if len(sub_args) > 1 else []
+        exit_code = apps_module.run(app_name, app_args)
+        raise typer.Exit(exit_code)
+    elif subcommand == "info":
+        if not sub_args:
+            typer.echo("Usage: clanker app info <name>")
+            return
+        app_name = sub_args[0]
+        # Get app info from resolver
+        app_info = state.resolver.get_app_info(app_name)
+        if app_info:
+            typer.echo(f"App: {app_name}")
+            if app_info.get('description'):
+                typer.echo(f"Description: {app_info['description']}")
+            if app_info.get('commands'):
+                typer.echo(f"Commands: {', '.join(app_info['commands'])}")
+        else:
+            typer.echo(f"App '{app_name}' not found")
     else:
         typer.echo(f"Unknown app command: {subcommand}")
+        typer.echo("Available: list, run, info")
 
 
 def handle_profile_command(args: List[str]):
@@ -203,44 +226,9 @@ def handle_models_command(args: List[str]):
                 typer.echo(f"    - {model}")
 
 
-def handle_flag_command(flag: str, args: List[str], state: AppState):
-    """Handle flag commands."""
-    if flag in ["--help", "-h"]:
-        typer.echo(USAGE_TEXT.format(app_name=APP_NAME))
-    elif flag in ["--version", "-v"]:
-        typer.echo(f"{APP_NAME} {VERSION}")
-    else:
-        typer.echo(f"Unknown flag: {flag}")
 
 
-@apps.command("list")
-def apps_list():
-    """List available apps."""
-    apps_module.list_apps()
-
-
-@apps.command("run")
-def apps_run(
-    app_name: str = typer.Argument(..., help="App to run"),
-    args: List[str] = typer.Argument(None, help="Arguments to pass to app")
-):
-    """Run an app."""
-    raise typer.Exit(apps_module.run(app_name, args))
-
-
-@app.command("run")
-def run(
-    app_name: str = typer.Argument(..., help="App to run"),
-    args: List[str] = typer.Argument(None, help="Arguments to pass to app")
-):
-    """Run an app."""
-    raise typer.Exit(apps_module.run(app_name, args))
-
-
-@app.command()
-def models():
-    """Show available models."""
-    handle_models_command([])
+# Remove old typer commands - everything goes through main now
 
 
 def main():

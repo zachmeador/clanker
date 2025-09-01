@@ -87,6 +87,40 @@ Available tools will be provided automatically based on context."""
         except Exception as e:
             logger.error(f"Agent request failed: {str(e)}", exc_info=True)
             return f"I encountered an error: {str(e)}"
+    
+    async def handle_request_async(self, request: str, context: List[Dict[str, Any]] = None) -> Any:
+        """Handle a natural language request asynchronously.
+
+        Args:
+            request: The user's natural language request
+            context: Optional conversation context
+
+        Returns:
+            The agent's result object (with output, messages, etc.)
+        """
+        logger.info(f"Processing async request: '{request}'")
+
+        try:
+            # Build context-aware prompt if context provided
+            prompt = request
+            if context:
+                # Add recent context to prompt
+                context_str = "Previous context: "
+                for exchange in context[-2:]:  # Last 2 exchanges
+                    context_str += f"User: {exchange.get('user', '')[:50]}... "
+                prompt = f"{context_str}\n{request}"
+            
+            logger.debug("Calling agent.run()")
+            # Run the agent asynchronously
+            result = await self.agent.run(prompt)
+            logger.debug(f"Agent returned result")
+            logger.info(f"Async request completed successfully")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Async agent request failed: {str(e)}", exc_info=True)
+            raise
 
     def get_available_tools(self) -> Dict[str, str]:
         """Get information about available tools."""
