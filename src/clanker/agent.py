@@ -53,14 +53,13 @@ Your capabilities:
 - Help with development tasks using available apps
 
 CRITICAL INSTRUCTIONS:
-- When users ask to run, launch, execute, or use any app, ALWAYS use the run_app tool
+- When users ask to run, launch, execute, or use any app, use the specific app tool (e.g., run_recipes, run_resumes)
 - Do NOT respond conversationally when a tool should be used
-- If you need to run an app, call the run_app tool with the appropriate app_name and args
 - Available apps: {', '.join(available_apps) if available_apps else 'none'}
 
 Guidelines:
 - Be helpful and direct
-- Use the run_app tool for any app-related requests
+- Use app-specific tools for app-related requests
 - Always explain what you're doing after using tools
 
 Available tools will be provided automatically based on context."""

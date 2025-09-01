@@ -14,50 +14,6 @@ from ..apps import discover
 logger = get_logger("toolsets")
 
 
-def run_app(
-    ctx: RunContext,
-    app_name: str,
-    args: str = ""
-) -> str:
-    """Execute a specific clanker application with given arguments."""
-    logger.info(f"run_app called with app_name='{app_name}', args='{args}'")
-
-    # Validate parameters
-    if not app_name or not isinstance(app_name, str):
-        logger.error(f"Invalid app_name parameter: {app_name}")
-        return "Error: app_name must be a non-empty string"
-
-    try:
-        from ..apps import run as run_app_impl
-        # Discover available apps
-        apps = discover()
-        logger.debug(f"Discovered apps: {list(apps.keys())}")
-
-        if app_name not in apps:
-            available = list(apps.keys())
-            logger.warning(f"App '{app_name}' not found. Available: {available}")
-            return f"App '{app_name}' not found. Available apps: {', '.join(available)}"
-
-        # Parse arguments
-        arg_list = args.split() if args.strip() else []
-
-        # Run the app
-        logger.info(f"Running app '{app_name}' with args: {arg_list}")
-        returncode = run_app_impl(app_name, arg_list)
-        logger.debug(f"App '{app_name}' returned exit code: {returncode}")
-
-        if returncode == 0:
-            logger.info(f"Successfully ran app '{app_name}'")
-            return f"Successfully ran app '{app_name}'"
-        else:
-            logger.warning(f"App '{app_name}' completed with exit code {returncode}")
-            return f"App '{app_name}' completed with exit code {returncode}"
-
-    except Exception as e:
-        logger.error(f"Failed to run app '{app_name}': {e}", exc_info=True)
-        return f"Failed to run app '{app_name}': {str(e)}"
-
-
 def bash(
     ctx: RunContext,
     command: str,
@@ -152,9 +108,56 @@ def launch_dev_tool(
         return f"Failed to launch {tool_name}: {str(e)}"
 
 
+def create_dynamic_app_toolset():
+    """Dynamically create specific tools for each discovered app."""
+    from ..apps import discover, run
+
+    tools = []
+    apps = discover()
+
+    for app_name, app_info in apps.items():
+        desc = app_info.get("description", f"Run the {app_name} app")
+        commands = app_info.get("commands", [])
+
+        # Create tool function with proper closure
+        def app_tool(ctx: RunContext, args: str = "", app_name=app_name) -> str:
+            """Dynamically created tool for running a specific app."""
+            try:
+                arg_list = args.split() if args.strip() else []
+                returncode = run(app_name, arg_list)
+
+                if returncode == 0:
+                    return f"Successfully ran {app_name} app"
+                else:
+                    return f"{app_name} app completed with exit code {returncode}"
+
+            except Exception as e:
+                logger.error(f"Failed to run {app_name}: {e}", exc_info=True)
+                return f"Failed to run {app_name} app: {str(e)}"
+
+        # Set metadata for the tool
+        app_tool.__name__ = f"run_{app_name}"
+        tool_desc = app_info.get("description", f"Run the {app_name} app")
+        cmd_str = f" Commands: {', '.join(commands)}" if commands else ""
+        app_tool.__doc__ = f"{tool_desc}.{cmd_str}"
+
+        tools.append(app_tool)
+
+    return FunctionToolset(tools=tools)
+
+
 def create_clanker_toolset():
     """Create the main clanker toolset with all core tools."""
-    return FunctionToolset(tools=[run_app, bash, launch_dev_tool])
+    # Core tools (always available)
+    core_tools = [bash, launch_dev_tool]
+
+    # Create dynamic app tools
+    dynamic_app_toolset = create_dynamic_app_toolset()
+
+    # Combine tools from both toolsets
+    all_tools = core_tools + list(dynamic_app_toolset.tools.values())
+
+    return FunctionToolset(tools=all_tools)
 
 
 def create_app_tools():
