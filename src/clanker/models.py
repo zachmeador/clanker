@@ -25,20 +25,20 @@ class ModelTier(str, Enum):
     HIGH = "high"      # Maximum quality
 
 
-# Tier preferences (ordered by preference)
+# Tier preferences (ordered by preference) - using real model names
 TIER_MODELS = {
     ModelTier.LOW: [
-        "openai:gpt-5-nano-2025-08-07",
+        "openai:gpt-4o-mini",
         "anthropic:claude-3-5-haiku-latest",
     ],
     ModelTier.MEDIUM: [
-        "openai:gpt-5-mini-2025-08-07",
-        "anthropic:claude-sonnet-4-0",
-        "anthropic:claude-3-7-sonnet-latest",
+        "openai:gpt-4o",
+        "anthropic:claude-3-5-sonnet-latest",
+        "anthropic:claude-3-5-haiku-latest",
     ],
     ModelTier.HIGH: [
-        "openai:gpt-5-2025-08-07",
-        "anthropic:claude-opus-4-1",
+        "openai:gpt-4o",
+        "anthropic:claude-3-5-sonnet-latest",
         "anthropic:claude-3-7-sonnet-latest",
     ],
 }

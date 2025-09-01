@@ -5,8 +5,6 @@
 - run `clanker [query]`
     - user can say "i want to build an app that does blah" and clanker will delegate this to a default or user specified llm dev tool, like claude code, gemini-cli, others, your own, etc.
     - user can say "i want to [do some thing that an app in this environment can do]" and clanker will smartly route to an llm chat, or run the app directly.
-- convention for the cli interfaces will be to use typer. need to migrate.
-- dir structure tweaks. check this project's structure and ensure code aligns
 
 ### need to think on
 
@@ -32,7 +30,7 @@
 
 ### immediate tasks
 
-- migrate old apps. redo/change the dumb parts.
+- migrate old claudio apps. redo/change the dumb parts.
 
 # more thoughts
 
