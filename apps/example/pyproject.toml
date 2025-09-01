@@ -1,12 +1,19 @@
 [project]
 name = "example"
 version = "0.1.0"
-description = "Example app demonstrating export-based Clanker integration"
+description = "Example app demonstrating CLI-based exports"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "clanker",
+    "typer",
+    "rich",
 ]
 
 [tool.uv.sources]
 clanker = { path = "../../", editable = true }
+
+# Clanker export declarations
+[tool.clanker.exports]
+hello = "python main.py hello {name}"
+status = "python main.py status"

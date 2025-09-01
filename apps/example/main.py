@@ -1,10 +1,27 @@
-"""Entry point for example app - now primarily for backwards compatibility."""
+"""Example app with CLI commands for export testing."""
 
-# Import the example package to trigger export registration
-import example
+import typer
+from rich.console import Console
+
+app = typer.Typer(help="Example app demonstrating CLI-based exports")
+console = Console()
+
+
+@app.command()
+def hello(name: str = typer.Argument("World", help="Name to greet")):
+    """Greet a user."""
+    greeting = f"Hello, {name}!"
+    console.print(f"[green]{greeting}[/green]")
+    return greeting
+
+
+@app.command()
+def status():
+    """Show app status."""
+    status_msg = "Example app is running"
+    console.print(f"[blue]{status_msg}[/blue]")
+    return status_msg
+
 
 if __name__ == "__main__":
-    # The app is now primarily driven through exports
-    # For backwards compatibility, you could add a simple CLI here
-    # But the main interface is now through Clanker's export system
-    print("Example app loaded. Use through Clanker: 'clanker example hello' or agent tools.")
+    app()
