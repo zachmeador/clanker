@@ -4,7 +4,7 @@ import asyncio
 from typing import List, Dict, Any, Optional
 from pydantic_ai import Agent
 from .models import create_agent as create_pydantic_agent, ModelTier
-from .tools import ToolRegistry, AppTool, BashTool, LLMDevTool
+from .tools import create_clanker_toolset
 from .apps import discover
 from .input_resolution import InputResolver
 from .logger import get_logger
@@ -22,52 +22,25 @@ class ClankerAgent:
             model_tier: The model tier to use for the agent
         """
         self.model_tier = model_tier
-        self.tool_registry = ToolRegistry()
         self.input_resolver = InputResolver()
 
-        # Register core tools first
-        self._register_core_tools()
-
-        # Initialize the pydantic-ai agent
+        # Initialize the pydantic-ai agent with toolsets
         self._setup_agent()
 
     def _setup_agent(self) -> None:
-        """Set up the pydantic-ai agent with system prompt."""
+        """Set up the pydantic-ai agent with system prompt and toolsets."""
         system_prompt = self._get_system_prompt()
 
-        # Get all available tools
-        tools = self.tool_registry.get_available_tools()
-        logger.info(f"Registering {len(tools)} tools with agent")
-        for i, tool in enumerate(tools):
-            logger.debug(f"Tool {i}: {getattr(tool, 'name', 'unnamed')}")
+        # Create toolset with all core tools
+        toolset = create_clanker_toolset()
+        logger.info("Created clanker toolset with core tools")
 
         self.agent = create_pydantic_agent(
             self.model_tier,
             system_prompt=system_prompt,
-            tools=tools
+            toolsets=[toolset]
         )
-        logger.info("Agent created successfully with tools")
-
-    def _register_core_tools(self) -> None:
-        """Register core tools with the registry."""
-        logger.info("Starting tool registration")
-
-        # Register generic app tool
-        app_tool = AppTool()
-        self.tool_registry.register(app_tool)
-        logger.info(f"Registered generic AppTool: {app_tool.name}")
-
-
-
-        # Register specific app tools for better UX
-        discovered_apps = discover()
-        logger.info(f"Discovered {len(discovered_apps)} apps")
-        for app_name, app_info in discovered_apps.items():
-            specific_tool = AppTool(app_info)
-            self.tool_registry.register(specific_tool)
-            logger.info(f"Registered specific AppTool for: {app_name}")
-
-        logger.info(f"Total tools registered: {len(self.tool_registry.get_available_tools())}")
+        logger.info("Agent created successfully with toolsets")
 
     def _get_system_prompt(self) -> str:
         """Get the system prompt for the agent."""
@@ -102,7 +75,6 @@ Available tools will be provided automatically based on context."""
             The agent's response
         """
         logger.info(f"Processing request: '{request}'")
-        logger.debug(f"Available tools: {list(self.tool_registry.get_tool_info().keys())}")
 
         try:
             logger.debug("Calling agent.run_sync()")
@@ -119,4 +91,10 @@ Available tools will be provided automatically based on context."""
 
     def get_available_tools(self) -> Dict[str, str]:
         """Get information about available tools."""
-        return self.tool_registry.get_tool_info()
+        # Get tools from the agent's toolsets
+        available_tools = {}
+        if hasattr(self.agent, 'toolsets'):
+            for toolset in self.agent.toolsets:
+                for tool_name, tool_obj in toolset.tools.items():
+                    available_tools[tool_name] = tool_obj.description or f"Tool: {tool_name}"
+        return available_tools

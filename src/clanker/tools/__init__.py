@@ -1,14 +1,9 @@
 """Tool system for clanker - enables natural language to action mapping."""
 
-from .registry import ToolRegistry, ToolProtocol
-from .app_tool import AppTool
-from .bash_tool import BashTool
-from .llm_dev_tool import LLMDevTool
+from .toolsets import create_clanker_toolset, create_app_tools, create_dev_tools
 
 __all__ = [
-    "ToolRegistry",
-    "ToolProtocol",
-    "AppTool",
-    "BashTool",
-    "LLMDevTool",
+    "create_clanker_toolset",
+    "create_app_tools",
+    "create_dev_tools",
 ]
