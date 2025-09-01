@@ -149,7 +149,9 @@ def create_dynamic_app_toolset():
 def create_clanker_toolset():
     """Create the main clanker toolset with all core tools."""
     # Core tools (always available)
-    core_tools = [bash, launch_dev_tool]
+    # core_tools = [bash, launch_dev_tool]
+    # TODO: User doesn't trust these tools yet.
+    core_tools = []
 
     # Create dynamic app tools
     dynamic_app_toolset = create_dynamic_app_toolset()
