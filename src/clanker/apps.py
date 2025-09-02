@@ -37,7 +37,7 @@ def _inspect_app(path: Path) -> Optional[dict]:
         "path": str(path),
         "entry": None,
         "description": None,
-        "commands": None,
+        "exports": [],  # CLI exports from pyproject.toml
     }
     
     # Parse pyproject.toml for metadata
@@ -48,6 +48,13 @@ def _inspect_app(path: Path) -> Optional[dict]:
         # Get description from project metadata
         project = pyproject.get("project", {})
         info["description"] = project.get("description", "")
+        
+        # Get CLI exports if defined
+        tool_config = pyproject.get("tool", {})
+        clanker_config = tool_config.get("clanker", {})
+        exports = clanker_config.get("exports", {})
+        if exports:
+            info["exports"] = list(exports.keys())
 
         # Check for script entry points
         scripts = project.get("scripts", {})
@@ -87,14 +94,9 @@ def _inspect_app(path: Path) -> Optional[dict]:
     if not entry_file:
         return None
     
-    # Get description and try to extract typer commands
+    # Get description from file if not in pyproject
     if not info["description"]:
         info["description"] = _get_description(entry_file)
-    
-    # Try to extract typer commands
-    commands = _extract_typer_commands(entry_file)
-    if commands:
-        info["commands"] = commands
     
     return info
 
@@ -122,59 +124,6 @@ def _get_description(py_file: Path) -> Optional[str]:
     except (FileNotFoundError, PermissionError, UnicodeDecodeError, SyntaxError):
         pass
     return None
-
-
-def _extract_typer_commands(py_file: Path) -> Optional[List[str]]:
-    """Try to extract typer command names from a Python file."""
-    try:
-        # Read the file and look for @app.command patterns using AST
-        # This avoids actually importing the module which can have side effects
-        content = py_file.read_text()
-        tree = ast.parse(content)
-        
-        # Find typer app variable name
-        typer_app_name = None
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                # Look for app = typer.Typer(...)
-                if isinstance(node.value, ast.Call):
-                    if (hasattr(node.value.func, 'attr') and 
-                        node.value.func.attr == 'Typer'):
-                        if node.targets and hasattr(node.targets[0], 'id'):
-                            typer_app_name = node.targets[0].id
-                            break
-        
-        if not typer_app_name:
-            return None
-        
-        # Find @app.command() decorators
-        commands = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
-                for decorator in node.decorator_list:
-                    # Check for @app.command()
-                    if isinstance(decorator, ast.Call):
-                        if (hasattr(decorator.func, 'attr') and 
-                            decorator.func.attr == 'command' and
-                            hasattr(decorator.func.value, 'id') and
-                            decorator.func.value.id == typer_app_name):
-                            # Use function name unless it's list (renamed)
-                            cmd_name = node.name
-                            if cmd_name == 'list_recipes':
-                                cmd_name = 'list'
-                            commands.append(cmd_name)
-                    # Check for @app.command("name")
-                    elif (hasattr(decorator, 'attr') and 
-                          decorator.attr == 'command' and
-                          hasattr(decorator.value, 'id') and
-                          decorator.value.id == typer_app_name):
-                        commands.append(node.name)
-        
-        return commands if commands else None
-    except (FileNotFoundError, PermissionError, UnicodeDecodeError, SyntaxError, AttributeError):
-        # Silently fail - app might not use typer or might have parsing issues
-        return None
-
 
 
 
@@ -224,7 +173,7 @@ def list_apps() -> None:
     print("Available apps:")
     for name, info in apps.items():
         desc = info.get("description", "")
-        commands = info.get("commands")
+        exports = info.get("exports", [])
         
         # Build display string
         if desc:
@@ -232,8 +181,8 @@ def list_apps() -> None:
         else:
             display = f"  {name}"
         
-        # Add commands if available
-        if commands:
-            display += f" [{', '.join(commands)}]"
+        # Add exports if available
+        if exports:
+            display += f" [exports: {', '.join(exports)}]"
         
         print(display)

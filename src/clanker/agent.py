@@ -97,43 +97,7 @@ Guidelines:
             logger.debug("Calling agent.run_sync() with message history")
             # Run the agent with conversation history
             result = self.agent.run_sync(request, message_history=self.message_history)
-
-            # Update message history for future conversations
-            self.message_history = result.new_messages()
-
-            # Extract tool call information for console display
-            tool_calls = []
-            tool_output = ""
-
-            # Parse tool calls from the result messages
-            for msg in result.new_messages():
-                if hasattr(msg, 'parts'):
-                    for part in msg.parts:
-                        if hasattr(part, 'tool_name') and hasattr(part, 'args'):
-                            # This is a tool call
-                            tool_calls.append({
-                                'name': part.tool_name,
-                                'args': part.args
-                            })
-                            # For CLI export tools, we can capture output here
-                            # (In a more complete implementation, we'd capture tool stdout)
-                            if hasattr(part, 'tool_name') and 'example_' in part.tool_name:
-                                # This would be where we capture actual tool output
-                                # For now, we'll leave tool_output empty as the agent handles it
-                                pass
-
-            response_text = result.output if hasattr(result, 'output') else str(result)
-            if not response_text:
-                response_text = "I processed your request but have no text response."
-
-            logger.debug(f"Agent returned result with output length: {len(response_text)}")
-            logger.info(f"Request completed successfully")
-
-            return {
-                'response': response_text,
-                'tool_calls': tool_calls,
-                'tool_output': tool_output
-            }
+            return self._process_result(result)
 
         except Exception as e:
             logger.error(f"Agent request failed: {str(e)}", exc_info=True)
@@ -158,37 +122,7 @@ Guidelines:
             logger.debug("Calling agent.run() with message history")
             # Run the agent with conversation history
             result = await self.agent.run(request, message_history=self.message_history)
-
-            # Update message history for future conversations
-            self.message_history = result.new_messages()
-
-            # Extract tool call information for console display
-            tool_calls = []
-            tool_output = ""
-
-            # Parse tool calls from the result messages
-            for msg in result.new_messages():
-                if hasattr(msg, 'parts'):
-                    for part in msg.parts:
-                        if hasattr(part, 'tool_name') and hasattr(part, 'args'):
-                            # This is a tool call
-                            tool_calls.append({
-                                'name': part.tool_name,
-                                'args': part.args
-                            })
-
-            response_text = result.output if hasattr(result, 'output') else str(result)
-            if not response_text:
-                response_text = "I processed your request but have no text response."
-
-            logger.debug(f"Agent returned result")
-            logger.info(f"Async request completed successfully")
-
-            return {
-                'response': response_text,
-                'tool_calls': tool_calls,
-                'tool_output': tool_output
-            }
+            return self._process_result(result)
 
         except Exception as e:
             logger.error(f"Async agent request failed: {str(e)}", exc_info=True)
@@ -197,6 +131,44 @@ Guidelines:
                 'tool_calls': [],
                 'tool_output': ""
             }
+
+    def _process_result(self, result) -> dict:
+        """Process agent result into standard response format.
+        
+        Args:
+            result: Pydantic AI result object
+            
+        Returns:
+            Dict with keys: 'response', 'tool_calls', 'tool_output'
+        """
+        # Update message history for future conversations
+        self.message_history = result.new_messages()
+
+        # Extract tool call information for console display
+        tool_calls = []
+        tool_output = ""
+
+        # Parse tool calls from the result messages
+        for msg in result.new_messages():
+            if hasattr(msg, 'parts'):
+                for part in msg.parts:
+                    if hasattr(part, 'tool_name') and hasattr(part, 'args'):
+                        tool_calls.append({
+                            'name': part.tool_name,
+                            'args': part.args
+                        })
+
+        response_text = result.output if hasattr(result, 'output') else str(result)
+        if not response_text:
+            response_text = "I processed your request but have no text response."
+
+        logger.info(f"Request completed successfully")
+
+        return {
+            'response': response_text,
+            'tool_calls': tool_calls,
+            'tool_output': tool_output
+        }
 
     def get_available_tools(self) -> Dict[str, str]:
         """Get information about available tools."""

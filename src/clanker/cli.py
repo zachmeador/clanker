@@ -47,28 +47,18 @@ System Commands:
 HELP_MESSAGE = "Use 'clanker system help' for help"
 
 
-@dataclass
-class AppState:
-    """Simple state container for clanker CLI."""
-    agent: Optional[ClankerAgent] = None
-    resolver: Optional[InputResolver] = None
+# Simple module-level instances - lazy initialized
+_agent: Optional[ClankerAgent] = None
+_resolver = InputResolver()
 
-    def __post_init__(self):
-        if self.resolver is None:
-            self.resolver = InputResolver()
-
-    def get_agent(self) -> ClankerAgent:
-        """Get or create the agent instance."""
-        if self.agent is None:
-            logger.debug("Creating new ClankerAgent instance")
-            self.agent = ClankerAgent()
-            logger.debug("ClankerAgent created successfully")
-        return self.agent
-
-
-def create_app_state() -> AppState:
-    """Create a new app state instance."""
-    return AppState()
+def get_agent() -> ClankerAgent:
+    """Get or create the agent instance."""
+    global _agent
+    if _agent is None:
+        logger.debug("Creating ClankerAgent instance")
+        _agent = ClankerAgent()
+        logger.debug("ClankerAgent created successfully")
+    return _agent
 
 
 @app.callback(invoke_without_command=True)
@@ -94,19 +84,16 @@ def main(
             raise typer.Exit(1)
         return
 
-    # Create app state for this command execution
-    state = create_app_state()
-
     # Resolve input type
-    resolution = state.resolver.resolve(args)
+    resolution = _resolver.resolve(args)
 
     if resolution["type"] == "system_command":
         # Handle system or app commands
         command = resolution["command"]
         if command == "system":
-            handle_system_command(resolution["args"], state)
+            handle_system_command(resolution["args"])
         elif command == "app":
-            handle_app_command(resolution["args"], state)
+            handle_app_command(resolution["args"])
         else:
             typer.echo(f"Unknown command: {command}")
             raise typer.Exit(1)
@@ -116,7 +103,7 @@ def main(
         logger.info(f"Natural language request: '{resolution['request']}'")
         try:
             logger.debug("Getting agent instance")
-            agent = state.get_agent()
+            agent = get_agent()
             logger.debug("Calling agent.handle_request()")
             result = agent.handle_request(resolution["request"])
             logger.debug(f"Agent returned result: '{result['response'][:100]}...'")
@@ -132,7 +119,7 @@ def main(
         raise typer.Exit(1)
 
 
-def handle_system_command(args: List[str], state: AppState):
+def handle_system_command(args: List[str]):
     """Handle system commands."""
     if not args:
         typer.echo("System commands: models, profile, config, help, version")
@@ -158,7 +145,7 @@ def handle_system_command(args: List[str], state: AppState):
         typer.echo("Available: models, profile, config, launch, help, version")
 
 
-def handle_app_command(args: List[str], state: AppState):
+def handle_app_command(args: List[str]):
     """Handle app management commands."""
     if not args:
         typer.echo("App commands: list, run <name>, info <name>")
