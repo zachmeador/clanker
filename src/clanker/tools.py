@@ -11,9 +11,39 @@ import tomllib
 from pydantic_ai.toolsets import FunctionToolset
 
 from .logger import get_logger
-from .context import CoreContextManager
 
 logger = get_logger("tools")
+
+# Tool display metadata for console
+TOOL_DISPLAY = {
+    "launch_claude_code": {
+        "name": "Launch Claude Code",
+        "description": "Start a coding session with context"
+    }
+}
+
+def get_tool_display_info(tool_name: str) -> dict:
+    """Get display metadata for any tool."""
+    
+    # Check if it's a core tool with custom display
+    if tool_name in TOOL_DISPLAY:
+        return TOOL_DISPLAY[tool_name]
+    
+    # CLI export pattern: appname_command
+    if "_" in tool_name:
+        parts = tool_name.split("_", 1)
+        if len(parts) == 2:
+            app, command = parts
+            return {
+                "name": f"{app} {command}",
+                "description": f"Run {command} from {app} app"
+            }
+    
+    # Fallback
+    return {
+        "name": tool_name,
+        "description": ""
+    }
 
 
 def launch_claude_code(query: str) -> str:
@@ -43,8 +73,8 @@ def launch_claude_code(query: str) -> str:
             app_name = "example"
 
         # Generate context
-        manager = CoreContextManager()
-        context = manager.get_session_context("claude", app_name, query)
+        from clanker.context.templates import cli_session_context
+        context = cli_session_context("claude", app_name, query)
 
         # Write context file
         try:

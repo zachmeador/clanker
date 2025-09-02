@@ -214,12 +214,12 @@ class InteractiveConsole:
             # toolsets[1] should be our FunctionToolset with the CLI export tools
             toolset = self.agent.agent.toolsets[1]
             if hasattr(toolset, 'tools') and toolset.tools:
+                from .tools import get_tool_display_info
                 for tool_name, tool in toolset.tools.items():
-                    console.print(f"  • [cyan]{tool_name}[/cyan]")
-                    # Use the tool's description or function docstring for better info
-                    description = getattr(tool, 'description', None) or getattr(tool.function, '__doc__', None)
-                    if description and description != "A tool function for an agent.":
-                        console.print(f"    [dim]{description}[/dim]")
+                    info = get_tool_display_info(tool_name)
+                    console.print(f"  • [cyan]{info['name']}[/cyan]")
+                    if info['description']:
+                        console.print(f"    [dim]{info['description']}[/dim]")
             else:
                 console.print("[dim]No tools configured[/dim]")
         else:

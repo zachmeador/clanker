@@ -7,7 +7,6 @@ from pydantic_ai.messages import ModelMessagesTypeAdapter
 from .models import create_agent as create_pydantic_agent, ModelTier
 from .tools import create_clanker_toolset
 from .logger import get_logger
-from .context import CoreContextManager
 
 logger = get_logger("agent")
 
@@ -23,7 +22,6 @@ class ClankerAgent:
         """
         self.model_tier = model_tier
         self.message_history = []  # Pydantic-ai message history for persistence
-        self.context_manager = CoreContextManager()  # Context for responses
 
         # Initialize the pydantic-ai agent with toolsets
         self._setup_agent()
@@ -45,10 +43,14 @@ class ClankerAgent:
 
     def _get_system_prompt(self) -> str:
         """Get the system prompt for the agent."""
-        clanker_overview = self.context_manager.get_snippet("clanker_overview")
-        available_apps = self.context_manager._get_available_apps_context()
-        cli_patterns = self.context_manager.get_snippet("cli_patterns")
-        export_system = self.context_manager.get_snippet("export_system")
+        from .context import ContextBuilder, ContextStore
+        from .context.templates import _get_available_apps_context
+        
+        store = ContextStore()
+        clanker_overview = store.get("clanker_overview") or ""
+        available_apps = _get_available_apps_context()
+        cli_patterns = store.get("cli_patterns") or ""
+        export_system = store.get("export_system") or ""
 
         return f"""{clanker_overview}
 

@@ -12,7 +12,6 @@ from .agent import ClankerAgent
 from .input_resolution import InputResolver
 from .models import ModelTier
 from .logger import get_logger
-from .context import CoreContextManager
 
 logger = get_logger("cli")
 
@@ -294,8 +293,8 @@ def handle_scaffold_command(app_name: str, description: str):
         typer.echo(f"Created apps/{app_name}/")
 
         # Generate scaffold context
-        manager = CoreContextManager()
-        instructions = manager.get_app_scaffold_context(app_name, description)
+        from clanker.context.templates import app_scaffold_context
+        instructions = app_scaffold_context(app_name, description)
 
         # Write INSTRUCTIONS.md
         instructions_file = app_dir / "INSTRUCTIONS.md"
