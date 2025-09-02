@@ -273,7 +273,7 @@ def handle_launch_command(args: List[str]):
     # Use the same launch tool as the agent
     from .tools import launch_claude_code
     try:
-        result = launch_claude_code(None, query)
+        result = launch_claude_code(query)
         # If we get here, launch failed - show error
         if result:
             typer.echo(result, err=True)

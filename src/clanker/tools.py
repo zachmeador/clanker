@@ -4,11 +4,10 @@ import os
 import subprocess
 import shlex
 from pathlib import Path
-from typing import Dict, List, Callable, Optional
+from typing import Dict, List, Callable
 import tomllib
-import pty
 
-from pydantic_ai import RunContext
+
 from pydantic_ai.toolsets import FunctionToolset
 
 from .logger import get_logger
@@ -17,7 +16,7 @@ from .context import CoreContextManager
 logger = get_logger("tools")
 
 
-def launch_claude_code(ctx: Optional[RunContext], query: str) -> str:
+def launch_claude_code(query: str) -> str:
     """Launch an interactive Claude Code session with Clanker context.
 
     This tool generates appropriate context for the given query and launches
@@ -62,10 +61,7 @@ def launch_claude_code(ctx: Optional[RunContext], query: str) -> str:
         try:
             logger.info("Launching Claude Code session with pseudo-terminal")
 
-            # Create clean environment for Claude Code (remove API keys)
-            env = os.environ.copy()
-
-            # Remove API keys that might conflict with Claude Code
+            # Clean environment for Claude Code (remove API keys that might conflict)
             api_keys_to_remove = [
                 'ANTHROPIC_API_KEY',
                 'OPENAI_API_KEY',
@@ -77,11 +73,11 @@ def launch_claude_code(ctx: Optional[RunContext], query: str) -> str:
             ]
 
             for key in api_keys_to_remove:
-                env.pop(key, None)
+                os.environ.pop(key, None)
 
-            # Use pty.spawn to properly allocate a pseudo-terminal
-            # This gives Claude Code a real terminal environment
-            pty.spawn(["claude"], env)
+            # Use os.execvp to replace the current process with claude
+            # This gives us a clean claude session with the modified environment
+            os.execvp("claude", ["claude"])
 
             # This code never executes - process is replaced above
 
@@ -147,7 +143,7 @@ def create_tool_function(app_name: str, export_name: str, cli_template: str) -> 
     import re
     param_names = re.findall(r'\{(\w+)\}', cli_template)
 
-    def tool_function(ctx: RunContext, **kwargs) -> str:
+    def tool_function(**kwargs) -> str:
         """Execute CLI command as tool."""
         try:
             # Provide default values for missing parameters
@@ -197,20 +193,20 @@ def create_clanker_toolset() -> FunctionToolset:
     plus core Clanker tools like launch_claude_code.
     """
     exports = discover_cli_exports()
-    tools = []
+    toolset = FunctionToolset()
 
     # Add core Clanker tools first
-    tools.append(launch_claude_code)
+    toolset.add_function(launch_claude_code)
     logger.debug("Added core tool: launch_claude_code")
 
     # Add CLI export tools from apps
     for app_name, app_exports in exports.items():
         for export_name, cli_template in app_exports.items():
-            tool = create_tool_function(app_name, export_name, cli_template)
-            tools.append(tool)
+            tool_func = create_tool_function(app_name, export_name, cli_template)
+            toolset.add_function(tool_func)
             logger.debug(f"Created tool: {app_name}_{export_name}")
 
-    return FunctionToolset(tools=tools)
+    return toolset
 
 
 def list_available_exports() -> Dict[str, List[str]]:

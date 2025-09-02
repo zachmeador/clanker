@@ -227,7 +227,7 @@ Guidelines:
 
             # Execute launch tool directly (this will replace the process if successful)
             from .tools import launch_claude_code
-            launch_claude_code(None, query)  # ctx can be None for direct call
+            launch_claude_code(query)
 
             # If we get here, the launch failed - log and continue
             logger.warning("Launch tool returned without replacing process")
