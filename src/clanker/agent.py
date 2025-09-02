@@ -87,12 +87,6 @@ Guidelines:
         """
         logger.info(f"Processing request: '{request}'")
 
-        # Special handling for launch requests - these replace the process
-        if self._is_launch_request(request):
-            self._handle_launch_request(request)
-            # If we get here, the launch failed - continue with normal processing
-            pass
-
         try:
             logger.debug("Calling agent.run_sync() with message history")
             # Run the agent with conversation history
@@ -182,49 +176,6 @@ Guidelines:
                         available_tools[tool_name] = get_tool_display_info(tool_name)
         return available_tools
 
-    def _is_launch_request(self, request: str) -> bool:
-        """Check if request is asking to launch Claude Code."""
-        request_lower = request.lower()
-        launch_keywords = ['launch', 'start', 'open', 'run']
-        claude_keywords = ['claude', 'claude code', 'claude-code']
-
-        has_launch = any(word in request_lower for word in launch_keywords)
-        has_claude = any(word in request_lower for word in claude_keywords)
-
-        return has_launch and has_claude
-
-    def _handle_launch_request(self, request: str) -> None:
-        """Handle launch requests by calling the tool directly."""
-        logger.info(f"Detected launch request: '{request}'")
-
-        try:
-            # Extract query from request (everything after launch/start keywords)
-            query = self._extract_launch_query(request)
-
-            # Execute launch tool directly (this will replace the process if successful)
-            from .tools import launch_claude_code
-            launch_claude_code(query)
-
-            # If we get here, the launch failed - log and continue
-            logger.warning("Launch tool returned without replacing process")
-
-        except Exception as e:
-            logger.error(f"Launch request handling failed: {e}")
-            # Continue with normal processing on failure
-
-    def _extract_launch_query(self, request: str) -> str:
-        """Extract the query part from a launch request."""
-        # Remove launch keywords and extract the rest as query
-        query = request.lower()
-        query = query.replace('launch', '').replace('start', '').replace('open', '').replace('run', '')
-        query = query.replace('claude', '').replace('claude code', '').replace('claude-code', '')
-        query = query.strip()
-
-        # If query is empty, use a default
-        if not query:
-            query = "general development work"
-
-        return query
 
     def save_conversation(self, filepath: str) -> None:
         """Save current conversation history to file."""
