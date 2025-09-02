@@ -170,14 +170,16 @@ Guidelines:
             'tool_output': tool_output
         }
 
-    def get_available_tools(self) -> Dict[str, str]:
-        """Get information about available tools."""
-        # Get tools from the agent's toolsets
+    def get_available_tools(self) -> Dict[str, Dict[str, str]]:
+        """Get information about available tools with display metadata."""
+        from .tools import get_tool_display_info
+        
         available_tools = {}
         if hasattr(self.agent, 'toolsets'):
             for toolset in self.agent.toolsets:
-                for tool_name, tool_obj in toolset.tools.items():
-                    available_tools[tool_name] = tool_obj.description or f"Tool: {tool_name}"
+                if hasattr(toolset, 'tools') and toolset.tools:
+                    for tool_name in toolset.tools.keys():
+                        available_tools[tool_name] = get_tool_display_info(tool_name)
         return available_tools
 
     def _is_launch_request(self, request: str) -> bool:

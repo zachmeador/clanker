@@ -9,7 +9,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
 
-from pydantic_ai.messages import ToolCallPart
 from .models import ModelTier
 from .agent import ClankerAgent
 from .logger import get_logger
@@ -30,7 +29,6 @@ class InteractiveConsole:
         """
         self.model_tier = model_tier
         self.history = deque(maxlen=context_window)
-        self.last_topic = None
         self.agent = None
         self.setup_agent()
         
@@ -54,10 +52,6 @@ class InteractiveConsole:
         
         # Add conversation context if we have history
         if self.history:
-            if self._is_continuation(request):
-                # This is a continuation - add explicit context
-                context_prompt = f"Continuing from our discussion about {self.last_topic}: {request}"
-            
             # Add recent conversation summary for context
             recent_context = "\n[Previous context: "
             for exchange in list(self.history)[-2:]:  # Last 2 exchanges
@@ -67,9 +61,7 @@ class InteractiveConsole:
                 else:
                     recent_context += f"User asked '{exchange['user'][:30]}...'. "
             recent_context += "]\n"
-            
-            if len(self.history) > 0:
-                context_prompt = recent_context + context_prompt
+            context_prompt = recent_context + context_prompt
         
         try:
             # Show pending indicator
@@ -126,8 +118,6 @@ class InteractiveConsole:
                 "tool_output": tool_output.strip() if tool_output else None
             })
 
-            # Update topic tracking
-            self._update_topic(request)
 
             return response_text, tool_calls
             
@@ -153,25 +143,6 @@ class InteractiveConsole:
                 await asyncio.sleep(delay)
         console.print()  # Final newline
     
-    def _is_continuation(self, request: str) -> bool:
-        """Check if request continues previous topic."""
-        continuations = ['it', 'that', 'this', 'them', 'those', 'run it', 'do it', 'tell me more']
-        lower = request.lower()
-        return any(phrase in lower for phrase in continuations)
-    
-    def _update_topic(self, request: str):
-        """Track what we're talking about."""
-        lower = request.lower()
-        if 'recipe' in lower:
-            self.last_topic = 'recipes'
-        elif 'weather' in lower:
-            self.last_topic = 'weather'
-        elif 'app' in lower:
-            self.last_topic = 'apps'
-        elif 'file' in lower or 'code' in lower:
-            self.last_topic = 'code'
-        elif 'bash' in lower or 'command' in lower:
-            self.last_topic = 'commands'
     
     def show_context(self):
         """Display current conversation context."""
@@ -202,26 +173,17 @@ class InteractiveConsole:
             response_preview = str(exchange['assistant'])[:60] if exchange['assistant'] else "No response"
             console.print(f"  Clanker: {response_preview}...")
         
-        if self.last_topic:
-            console.print(f"\n[dim]Current topic: {self.last_topic}[/dim]")
     
     def show_available_tools(self):
         """Display available tools."""
         console.print("\n[bold]Available Tools[/bold]")
 
-        # Get tools from the second toolset (our FunctionToolset)
-        if hasattr(self.agent, 'agent') and hasattr(self.agent.agent, 'toolsets') and len(self.agent.agent.toolsets) > 1:
-            # toolsets[1] should be our FunctionToolset with the CLI export tools
-            toolset = self.agent.agent.toolsets[1]
-            if hasattr(toolset, 'tools') and toolset.tools:
-                from .tools import get_tool_display_info
-                for tool_name, tool in toolset.tools.items():
-                    info = get_tool_display_info(tool_name)
-                    console.print(f"  • [cyan]{info['name']}[/cyan]")
-                    if info['description']:
-                        console.print(f"    [dim]{info['description']}[/dim]")
-            else:
-                console.print("[dim]No tools configured[/dim]")
+        tools = self.agent.get_available_tools()
+        if tools:
+            for tool_name, info in tools.items():
+                console.print(f"  • [cyan]{info['name']}[/cyan]")
+                if info['description']:
+                    console.print(f"    [dim]{info['description']}[/dim]")
         else:
             console.print("[dim]No tools configured[/dim]")
     
@@ -249,8 +211,45 @@ class InteractiveConsole:
 """
         console.print(Panel(help_text, border_style="blue"))
     
+    def _is_interactive(self) -> bool:
+        """Check if we're in an interactive environment."""
+        # Check if stdin is a tty (real terminal)
+        if not sys.stdin.isatty():
+            return False
+        
+        # Check if we can actually read from stdin
+        try:
+            # Test if stdin is readable without blocking
+            import select
+            ready, _, _ = select.select([sys.stdin], [], [], 0)
+            # If stdin is immediately ready, it might be redirected/closed
+            if ready:
+                # Try to peek at stdin
+                try:
+                    sys.stdin.peek(1)  # This will fail if stdin is not buffered properly
+                except (OSError, AttributeError):
+                    return False
+        except (ImportError, OSError):
+            # select not available on all platforms, fall back to basic checks
+            pass
+        
+        # Additional check: see if we can create a prompt
+        try:
+            # This is a more direct test - just check if rich.prompt would work
+            from rich.prompt import Prompt
+            # Don't actually prompt, just check if the console is compatible
+            return console.is_terminal and not console.legacy_windows
+        except:
+            return False
+    
     async def run(self):
         """Main console loop."""
+        # Check if we're in an interactive environment
+        if not self._is_interactive():
+            console.print("[red]Error: Interactive console requires a terminal with stdin[/red]")
+            console.print("[dim]Hint: Use 'clanker \"your request\"' for one-shot commands[/dim]")
+            return
+        
         # Welcome message
         console.print(Panel.fit(
             "[bold cyan]Clanker Interactive Console[/bold cyan]\n"
@@ -286,9 +285,6 @@ class InteractiveConsole:
                 # Handle regular request
                 response, tools_used = await self.handle_request(user_input)
                 
-                # Show context awareness indicator
-                if self._is_continuation(user_input) and self.last_topic:
-                    console.print(f"[dim](understood in context of {self.last_topic})[/dim]")
                 
             except KeyboardInterrupt:
                 console.print("\n[yellow]Interrupted[/yellow]")
