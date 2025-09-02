@@ -86,7 +86,7 @@ class InteractiveConsole:
             tool_calls = result['tool_calls']
             tool_output = result['tool_output']
 
-            # Display tool calls
+            # Display tool calls and handle confirmations
             for tool in tool_calls:
                 tool_name = tool['name']
                 if tool.get('args') and isinstance(tool['args'], dict) and tool['args']:
@@ -94,6 +94,10 @@ class InteractiveConsole:
                     console.print(f"[dim yellow]→ Calling: {tool_name}({args_str})[/dim yellow]")
                 else:
                     console.print(f"[dim yellow]→ Calling: {tool_name}[/dim yellow]")
+
+                # Handle confirmation for launch_claude_code tool
+                # Note: Confirmation is skipped since the process will be replaced anyway
+                # The tool handles its own environment cleanup
 
             # Show tool output if any
             if tool_output and tool_output.strip():
@@ -107,8 +111,12 @@ class InteractiveConsole:
                     console.print("[dim]   ...[/dim]")
 
             # Display response with streaming effect
-            console.print("[bold cyan]Clanker[/bold cyan]: ", end="")
-            await self._stream_response(str(response_text))
+            if response_text and response_text.strip():
+                console.print("[bold cyan]Clanker[/bold cyan]: ", end="")
+                await self._stream_response(str(response_text))
+            else:
+                # No response to show
+                pass
 
             # Update history
             self.history.append({
@@ -128,10 +136,10 @@ class InteractiveConsole:
             console.print(f"[red]{error_msg}[/red]")
             logger.error(f"Console request failed: {e}", exc_info=True)
             return error_msg, []
-    
+
     async def _stream_response(self, text: str, delay: float = 0.02):
         """Simulate streaming response word by word.
-        
+
         Args:
             text: The text to stream
             delay: Delay between words in seconds

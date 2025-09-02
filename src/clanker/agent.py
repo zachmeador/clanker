@@ -7,6 +7,7 @@ from pydantic_ai.messages import ModelMessagesTypeAdapter
 from .models import create_agent as create_pydantic_agent, ModelTier
 from .tools import create_clanker_toolset
 from .logger import get_logger
+from .context import CoreContextManager
 
 logger = get_logger("agent")
 
@@ -22,6 +23,7 @@ class ClankerAgent:
         """
         self.model_tier = model_tier
         self.message_history = []  # Pydantic-ai message history for persistence
+        self.context_manager = CoreContextManager()  # Context for responses
 
         # Initialize the pydantic-ai agent with toolsets
         self._setup_agent()
@@ -43,11 +45,23 @@ class ClankerAgent:
 
     def _get_system_prompt(self) -> str:
         """Get the system prompt for the agent."""
-        return """You are Clanker, an AI-powered development environment.
+        clanker_overview = self.context_manager.get_snippet("clanker_overview")
+        available_apps = self.context_manager._get_available_apps_context()
+        cli_patterns = self.context_manager.get_snippet("cli_patterns")
+        export_system = self.context_manager.get_snippet("export_system")
+
+        return f"""{clanker_overview}
 
 Your capabilities:
 - Run clanker apps using available tools
 - Help with development tasks
+- Provide contextual information about the system
+
+{available_apps}
+
+{cli_patterns}
+
+{export_system}
 
 CRITICAL INSTRUCTIONS:
 - When users ask to run, launch, execute, or use any app, use the specific app tool
@@ -57,7 +71,8 @@ CRITICAL INSTRUCTIONS:
 Guidelines:
 - Be helpful and direct
 - Use tools for app-related requests
-- Explain what you're doing after using tools"""
+- Explain what you're doing after using tools
+- Use the context information above to provide accurate responses"""
 
     def handle_request(self, request: str) -> dict:
         """Handle a natural language request.
@@ -69,6 +84,12 @@ Guidelines:
             Dict with keys: 'response', 'tool_calls', 'tool_output'
         """
         logger.info(f"Processing request: '{request}'")
+
+        # Special handling for launch requests - these replace the process
+        if self._is_launch_request(request):
+            self._handle_launch_request(request)
+            # If we get here, the launch failed - continue with normal processing
+            pass
 
         try:
             logger.debug("Calling agent.run_sync() with message history")
@@ -184,6 +205,50 @@ Guidelines:
                 for tool_name, tool_obj in toolset.tools.items():
                     available_tools[tool_name] = tool_obj.description or f"Tool: {tool_name}"
         return available_tools
+
+    def _is_launch_request(self, request: str) -> bool:
+        """Check if request is asking to launch Claude Code."""
+        request_lower = request.lower()
+        launch_keywords = ['launch', 'start', 'open', 'run']
+        claude_keywords = ['claude', 'claude code', 'claude-code']
+
+        has_launch = any(word in request_lower for word in launch_keywords)
+        has_claude = any(word in request_lower for word in claude_keywords)
+
+        return has_launch and has_claude
+
+    def _handle_launch_request(self, request: str) -> None:
+        """Handle launch requests by calling the tool directly."""
+        logger.info(f"Detected launch request: '{request}'")
+
+        try:
+            # Extract query from request (everything after launch/start keywords)
+            query = self._extract_launch_query(request)
+
+            # Execute launch tool directly (this will replace the process if successful)
+            from .tools import launch_claude_code
+            launch_claude_code(None, query)  # ctx can be None for direct call
+
+            # If we get here, the launch failed - log and continue
+            logger.warning("Launch tool returned without replacing process")
+
+        except Exception as e:
+            logger.error(f"Launch request handling failed: {e}")
+            # Continue with normal processing on failure
+
+    def _extract_launch_query(self, request: str) -> str:
+        """Extract the query part from a launch request."""
+        # Remove launch keywords and extract the rest as query
+        query = request.lower()
+        query = query.replace('launch', '').replace('start', '').replace('open', '').replace('run', '')
+        query = query.replace('claude', '').replace('claude code', '').replace('claude-code', '')
+        query = query.strip()
+
+        # If query is empty, use a default
+        if not query:
+            query = "general development work"
+
+        return query
 
     def save_conversation(self, filepath: str) -> None:
         """Save current conversation history to file."""

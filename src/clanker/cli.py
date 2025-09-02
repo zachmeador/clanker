@@ -2,6 +2,7 @@
 
 import asyncio
 import typer
+from pathlib import Path
 from typing import Optional, List
 from dataclasses import dataclass
 
@@ -11,6 +12,7 @@ from .agent import ClankerAgent
 from .input_resolution import InputResolver
 from .models import ModelTier
 from .logger import get_logger
+from .context import CoreContextManager
 
 logger = get_logger("cli")
 
@@ -33,11 +35,13 @@ App Commands:
   clanker app list           - List available apps
   clanker app run <name>     - Run an app
   clanker app info <name>    - Show app details
+  clanker app scaffold       - Create new app with guidance
 
 System Commands:
   clanker system models      - Show available AI models
   clanker system profile     - Manage profiles
   clanker system config      - Configuration settings
+  clanker system launch      - Launch coding tools with context
   clanker system help        - Show help
   clanker system version     - Show version"""
 
@@ -144,13 +148,15 @@ def handle_system_command(args: List[str], state: AppState):
         handle_profile_command(sub_args)
     elif subcommand == "config":
         handle_config_command(sub_args)
+    elif subcommand == "launch":
+        handle_launch_command(sub_args)
     elif subcommand == "help":
         typer.echo(USAGE_TEXT.format(app_name=APP_NAME))
     elif subcommand == "version":
         typer.echo(f"{APP_NAME} {VERSION}")
     else:
         typer.echo(f"Unknown system command: {subcommand}")
-        typer.echo("Available: models, profile, config, help, version")
+        typer.echo("Available: models, profile, config, launch, help, version")
 
 
 def handle_app_command(args: List[str], state: AppState):
@@ -187,9 +193,16 @@ def handle_app_command(args: List[str], state: AppState):
                 typer.echo(f"Commands: {', '.join(app_info['commands'])}")
         else:
             typer.echo(f"App '{app_name}' not found")
+    elif subcommand == "scaffold":
+        if len(sub_args) < 2:
+            typer.echo("Usage: clanker app scaffold <name> <description>")
+            return
+        app_name = sub_args[0]
+        description = " ".join(sub_args[1:])
+        handle_scaffold_command(app_name, description)
     else:
         typer.echo(f"Unknown app command: {subcommand}")
-        typer.echo("Available: list, run, info")
+        typer.echo("Available: list, run, info, scaffold")
 
 
 def handle_profile_command(args: List[str]):
@@ -224,6 +237,78 @@ def handle_models_command(args: List[str]):
             typer.echo(f"  {provider}:")
             for model in models:
                 typer.echo(f"    - {model}")
+
+
+def handle_launch_command(args: List[str]):
+    """Handle launch command for coding tools."""
+    if not args:
+        typer.echo("Usage: clanker system launch <tool> [--app <app_name>] [--request <request>]")
+        typer.echo("Tools: claude, cursor, generic")
+        return
+
+    tool_name = args[0]
+    app_name = None
+    user_request = None
+
+    # Parse optional args
+    i = 1
+    while i < len(args):
+        if args[i] == "--app" and i + 1 < len(args):
+            app_name = args[i + 1]
+            i += 2
+        elif args[i] == "--request" and i + 1 < len(args):
+            user_request = " ".join(args[i + 1:])
+            break
+        else:
+            i += 1
+
+    # Build query from args for consistency with agent approach
+    query_parts = []
+    if app_name:
+        query_parts.append(f"working on {app_name}")
+    if user_request:
+        query_parts.append(user_request)
+    query = " ".join(query_parts) if query_parts else "general development work"
+
+    # Use the same launch tool as the agent
+    from .tools import launch_claude_code
+    try:
+        result = launch_claude_code(None, query)
+        # If we get here, launch failed - show error
+        if result:
+            typer.echo(result, err=True)
+    except Exception as e:
+        typer.echo(f"Launch failed: {e}", err=True)
+
+
+def handle_scaffold_command(app_name: str, description: str):
+    """Handle scaffold command for new apps."""
+    # Create app directory
+    app_dir = Path(f"apps/{app_name}")
+    if app_dir.exists():
+        typer.echo(f"App directory apps/{app_name} already exists!", err=True)
+        return
+
+    try:
+        app_dir.mkdir(parents=True)
+        typer.echo(f"Created apps/{app_name}/")
+
+        # Generate scaffold context
+        manager = CoreContextManager()
+        instructions = manager.get_app_scaffold_context(app_name, description)
+
+        # Write INSTRUCTIONS.md
+        instructions_file = app_dir / "INSTRUCTIONS.md"
+        with open(instructions_file, "w") as f:
+            f.write(instructions)
+
+        typer.echo(f"Generated INSTRUCTIONS.md with scaffold guide")
+        typer.echo(f"Next steps:")
+        typer.echo(f"  cd apps/{app_name}")
+        typer.echo(f"  Follow the instructions in INSTRUCTIONS.md")
+
+    except Exception as e:
+        typer.echo(f"Error creating scaffold: {e}", err=True)
 
 
 # Remove old typer commands - everything goes through main now

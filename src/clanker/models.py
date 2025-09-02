@@ -2,7 +2,7 @@
 
 import os
 from enum import Enum
-from typing import Optional, Union, Dict, List
+from typing import Optional, Union, Dict, List, Any
 
 from dotenv import load_dotenv
 
@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from pydantic_ai import Agent
-from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
@@ -55,7 +54,7 @@ def _get_available_providers() -> Dict[str, Optional[str]]:
     }
 
 
-def get_model(spec: Union[str, ModelTier]) -> Model:
+def get_model(spec: Union[str, ModelTier]) -> Any:
     """Get model by tier or explicit name.
     
     Args:
@@ -107,7 +106,7 @@ def get_model(spec: Union[str, ModelTier]) -> Model:
         return _create_model(spec)
 
 
-def _create_model(model_str: str) -> Model:
+def _create_model(model_str: str) -> Any:
     """Create model instance, with clear errors if unavailable.
     
     Args:
