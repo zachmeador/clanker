@@ -245,25 +245,6 @@ class Vault:
         
         # Create vault root if needed (profile already ensures this, but be safe)
         self.vault_root.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize permission tables
-        self._init_db()
-    
-    def _init_db(self):
-        """Initialize the database with vault permission tables."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS _vault_permissions (
-                    app_name TEXT NOT NULL,
-                    target_app TEXT NOT NULL,
-                    read INTEGER DEFAULT 0,
-                    write INTEGER DEFAULT 0,
-                    granted_by TEXT DEFAULT 'user',
-                    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (app_name, target_app)
-                )
-            """)
-            conn.commit()
     
     @classmethod
     def for_app(cls, app_name: str, requester_app: Optional[str] = None) -> AppVault:

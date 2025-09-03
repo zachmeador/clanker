@@ -299,33 +299,6 @@ class DaemonManager:
             profile: Profile for storage (uses current if not provided)
         """
         self.profile = profile or Profile.current()
-        self._init_db()
-    
-    def _init_db(self) -> None:
-        """Initialize daemon tracking tables."""
-        with sqlite3.connect(self.profile.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS _daemons (
-                    app_name TEXT NOT NULL,
-                    daemon_id TEXT NOT NULL,
-                    pid INTEGER,
-                    status TEXT NOT NULL,
-                    command TEXT,
-                    started_at TEXT,
-                    last_heartbeat TEXT,
-                    PRIMARY KEY (app_name, daemon_id)
-                )
-            """)
-            
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS _daemon_startup (
-                    app_name TEXT NOT NULL,
-                    daemon_id TEXT NOT NULL,
-                    enabled INTEGER DEFAULT 0,
-                    PRIMARY KEY (app_name, daemon_id)
-                )
-            """)
-            conn.commit()
     
     @contextmanager
     def _db_connection(self):

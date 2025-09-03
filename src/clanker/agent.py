@@ -28,6 +28,11 @@ class ClankerAgent:
 
     def _setup_agent(self) -> None:
         """Set up the pydantic-ai agent with system prompt and toolsets."""
+        # Ensure database schema is initialized before creating tools
+        from .storage.schema import ensure_database_initialized
+        ensure_database_initialized()
+        logger.debug("Database schema initialized")
+        
         system_prompt = self._get_system_prompt()
 
         # Create toolset with all core tools

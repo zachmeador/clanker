@@ -193,57 +193,20 @@ class AppDB:
 class DB:
     """Main database interface for clanker."""
     
-    def __init__(self):
-        # Find project root by looking for pyproject.toml or .git
-        current = Path(__file__).resolve().parent
-        project_root = None
+    def __init__(self, profile: Optional['Profile'] = None):
+        """Initialize database interface.
         
-        while current != current.parent:
-            if (current / "pyproject.toml").exists() or (current / ".git").exists():
-                project_root = current
-                break
-            current = current.parent
-        
-        if project_root is None:
-            # Fallback to parent of src directory
-            project_root = Path(__file__).parent.parent.parent.parent
-        
-        # Use data/default directory for storage
-        data_dir = project_root / "data" / "default"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        
-        self.db_path = data_dir / "clanker.db"
-        self._init_db()
-    
-    def _init_db(self):
-        """Initialize the database with system tables."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS _app_tables (
-                    app_name TEXT NOT NULL,
-                    table_name TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (app_name, table_name)
-                )
-            """)
-            
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS _permissions (
-                    app_name TEXT NOT NULL,
-                    table_name TEXT NOT NULL,
-                    read INTEGER DEFAULT 0,
-                    write INTEGER DEFAULT 0,
-                    granted_by TEXT DEFAULT 'user',
-                    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (app_name, table_name)
-                )
-            """)
-            conn.commit()
+        Args:
+            profile: Profile for database path (uses current if not provided)
+        """
+        from ..profile import Profile
+        self.profile = profile or Profile.current()
+        self.db_path = self.profile.db_path
     
     @classmethod
-    def for_app(cls, app_name: str) -> AppDB:
+    def for_app(cls, app_name: str, profile: Optional['Profile'] = None) -> AppDB:
         """Get a database context for a specific app."""
-        db = cls()
+        db = cls(profile)
         return AppDB(app_name, db.db_path)
     
     def grant_permission(self, app_name: str, table_name: str, read: bool = False, write: bool = False) -> None:

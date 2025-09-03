@@ -44,6 +44,25 @@ class Profile:
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         self.vault_root.mkdir(parents=True, exist_ok=True)
         self.daemons_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize database schema
+        # Note: Commented out for now to fix hang - need to call this explicitly
+        # self._ensure_database_schema()
+    
+    def _ensure_database_schema(self) -> None:
+        """Ensure database schema is initialized."""
+        try:
+            from .storage.schema import ensure_database_initialized
+            ensure_database_initialized(self)
+        except Exception as e:
+            # Log but don't fail - database operations will fail more obviously
+            from .logger import get_logger
+            logger = get_logger("profile")
+            logger.error(f"Failed to initialize database schema: {e}")
+    
+    def init_schema(self) -> None:
+        """Explicitly initialize database schema."""
+        self._ensure_database_schema()
     
     @property
     def data_root(self) -> Path:
