@@ -77,6 +77,7 @@ what clanker does
 - clanker being modular in its scope
     - clanker environment -> developing small apps in clanker
     - clanker cli, any CWD -> coding cli launcher, starting context manager? 
+- at some point, giving clanker some code editing abilities will make sense. rn in cursor claude opus for planning -> grok-code-fast-1 for execution, is very powerful. 
 
 ## app ideas
 

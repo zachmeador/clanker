@@ -11,6 +11,7 @@ import tomllib
 from pydantic_ai.toolsets import FunctionToolset
 
 from .logger import get_logger
+from .daemon import DaemonManager, DaemonStatus
 
 logger = get_logger("tools")
 
@@ -19,6 +20,26 @@ TOOL_DISPLAY = {
     "launch_coding_tool": {
         "name": "Launch Coding Tool",
         "description": "Start a coding session with any CLI coding tool"
+    },
+    "daemon_list": {
+        "name": "List Daemons",
+        "description": "Show all registered daemons and their status"
+    },
+    "daemon_start": {
+        "name": "Start Daemon",
+        "description": "Start a specific app daemon"
+    },
+    "daemon_stop": {
+        "name": "Stop Daemon", 
+        "description": "Stop a specific app daemon"
+    },
+    "daemon_logs": {
+        "name": "View Daemon Logs",
+        "description": "View recent log output from a daemon"
+    },
+    "daemon_kill_all": {
+        "name": "Kill All Daemons",
+        "description": "Emergency stop all running daemons"
     }
 }
 
@@ -30,7 +51,19 @@ def get_tool_display_info(tool_name: str) -> dict:
         return TOOL_DISPLAY[tool_name]
     
     # CLI export pattern: appname_command
+    # Need to find the correct split point by checking discovered exports
     if "_" in tool_name:
+        exports = discover_cli_exports()
+        for app_name, app_exports in exports.items():
+            for export_name in app_exports.keys():
+                expected_tool_name = f"{app_name}_{export_name}"
+                if tool_name == expected_tool_name:
+                    return {
+                        "name": f"{app_name} {export_name}",
+                        "description": f"Run {export_name} from {app_name} app"
+                    }
+        
+        # Fallback to simple split if not found in exports
         parts = tool_name.split("_", 1)
         if len(parts) == 2:
             app, command = parts
@@ -152,6 +185,221 @@ def launch_coding_tool(tool: str, query: str) -> str:
         return error_msg
 
 
+def daemon_list() -> str:
+    """List all registered daemons with their current status.
+    
+    Returns:
+        Formatted string showing daemon status information
+    """
+    try:
+        manager = DaemonManager()
+        daemons = manager.list_daemons()
+        
+        if not daemons:
+            return "No daemons registered."
+        
+        output = ["Registered Daemons:"]
+        output.append("-" * 60)
+        
+        for daemon in daemons:
+            app_daemon = f"{daemon['app_name']}:{daemon['daemon_id']}"
+            status = daemon['status']
+            
+            if status == DaemonStatus.RUNNING:
+                uptime_str = f"{daemon['uptime']:.1f}s" if daemon['uptime'] else "unknown"
+                memory_str = f"{daemon['memory_mb']:.1f}MB" if daemon['memory_mb'] else "unknown"
+                output.append(f"✓ {app_daemon:30} RUNNING (PID: {daemon['pid']}, uptime: {uptime_str}, mem: {memory_str})")
+            elif status == DaemonStatus.STOPPED:
+                output.append(f"○ {app_daemon:30} STOPPED")
+            elif status == DaemonStatus.CRASHED:
+                output.append(f"✗ {app_daemon:30} CRASHED")
+            else:
+                output.append(f"? {app_daemon:30} {status.upper()}")
+        
+        return "\n".join(output)
+        
+    except Exception as e:
+        logger.error(f"Failed to list daemons: {e}")
+        return f"Error listing daemons: {e}"
+
+
+def daemon_start(app_name: str, daemon_id: str) -> str:
+    """Start a specific daemon.
+    
+    Args:
+        app_name: Name of the app
+        daemon_id: ID of the daemon to start
+        
+    Returns:
+        Status message about the start operation
+    """
+    try:
+        # Get daemon configuration from app's pyproject.toml
+        daemon_configs = discover_daemon_configs()
+        
+        if app_name not in daemon_configs:
+            return f"❌ No daemon configurations found for app '{app_name}'"
+            
+        if daemon_id not in daemon_configs[app_name]:
+            available = ", ".join(daemon_configs[app_name].keys())
+            return f"❌ Daemon '{daemon_id}' not found in app '{app_name}'. Available: {available}"
+        
+        command_template = daemon_configs[app_name][daemon_id]
+        
+        # Parse command template
+        import shlex
+        command = shlex.split(command_template)
+        
+        # Create daemon and start it
+        manager = DaemonManager()
+        daemon = manager.get_daemon(app_name, daemon_id)
+        
+        if daemon.is_running():
+            return f"⚠️ Daemon {app_name}:{daemon_id} is already running"
+        
+        app_dir = Path("./apps") / app_name
+        success = daemon.start(command, cwd=app_dir)
+        
+        if success:
+            pid = daemon.get_pid()
+            return f"✅ Started daemon {app_name}:{daemon_id} (PID: {pid})"
+        else:
+            return f"❌ Failed to start daemon {app_name}:{daemon_id}"
+            
+    except Exception as e:
+        logger.error(f"Failed to start daemon {app_name}:{daemon_id}: {e}")
+        return f"❌ Error starting daemon: {e}"
+
+
+def daemon_stop(app_name: str, daemon_id: str) -> str:
+    """Stop a specific daemon.
+    
+    Args:
+        app_name: Name of the app
+        daemon_id: ID of the daemon to stop
+        
+    Returns:
+        Status message about the stop operation
+    """
+    try:
+        manager = DaemonManager()
+        daemon = manager.get_daemon(app_name, daemon_id)
+        
+        if not daemon.is_running():
+            return f"⚠️ Daemon {app_name}:{daemon_id} is not running"
+        
+        success = daemon.stop()
+        
+        if success:
+            return f"✅ Stopped daemon {app_name}:{daemon_id}"
+        else:
+            return f"❌ Failed to stop daemon {app_name}:{daemon_id}"
+            
+    except Exception as e:
+        logger.error(f"Failed to stop daemon {app_name}:{daemon_id}: {e}")
+        return f"❌ Error stopping daemon: {e}"
+
+
+def daemon_logs(app_name: str, daemon_id: str, lines: int = 50) -> str:
+    """View recent log output from a daemon.
+    
+    Args:
+        app_name: Name of the app
+        daemon_id: ID of the daemon
+        lines: Number of lines to show (default 50)
+        
+    Returns:
+        Recent log output
+    """
+    try:
+        manager = DaemonManager()
+        daemon = manager.get_daemon(app_name, daemon_id)
+        
+        log_lines = daemon.get_logs(lines)
+        
+        if not log_lines:
+            return f"No logs available for daemon {app_name}:{daemon_id}"
+        
+        output = [f"Recent logs for {app_name}:{daemon_id} (last {len(log_lines)} lines):"]
+        output.append("-" * 60)
+        output.extend(log_lines)
+        
+        return "\n".join(output)
+        
+    except Exception as e:
+        logger.error(f"Failed to get logs for daemon {app_name}:{daemon_id}: {e}")
+        return f"❌ Error getting logs: {e}"
+
+
+def daemon_kill_all() -> str:
+    """Emergency stop all running daemons.
+    
+    Returns:
+        Status message about the kill operation
+    """
+    try:
+        manager = DaemonManager()
+        results = manager.stop_all_daemons()
+        
+        if not results:
+            return "No running daemons to stop."
+        
+        output = ["Daemon shutdown results:"]
+        success_count = 0
+        
+        for daemon_name, success in results.items():
+            if success:
+                output.append(f"✅ {daemon_name}")
+                success_count += 1
+            else:
+                output.append(f"❌ {daemon_name}")
+        
+        total = len(results)
+        output.append(f"\nStopped {success_count}/{total} daemons successfully")
+        
+        return "\n".join(output)
+        
+    except Exception as e:
+        logger.error(f"Failed to kill all daemons: {e}")
+        return f"❌ Error killing daemons: {e}"
+
+
+def discover_daemon_configs() -> Dict[str, Dict[str, str]]:
+    """Discover daemon configurations from all apps.
+    
+    Returns:
+        Dict mapping app_name -> {daemon_id: command_template}
+    """
+    apps_dir = Path("./apps")
+    if not apps_dir.exists():
+        return {}
+    
+    configs = {}
+    
+    for item in apps_dir.iterdir():
+        if not item.is_dir() or item.name.startswith(('_', '.')):
+            continue
+            
+        pyproject_path = item / "pyproject.toml"
+        if not pyproject_path.exists():
+            continue
+        
+        try:
+            with open(pyproject_path, 'rb') as f:
+                pyproject = tomllib.load(f)
+            
+            # Look for daemon configurations
+            daemon_configs = pyproject.get("tool", {}).get("clanker", {}).get("daemons", {})
+            if daemon_configs:
+                configs[item.name] = dict(daemon_configs)
+                logger.debug(f"Found {len(daemon_configs)} daemon configs for {item.name}")
+                
+        except Exception as e:
+            logger.warning(f"Failed to read daemon configs from {item.name}: {e}")
+    
+    return configs
+
+
 def discover_cli_exports() -> Dict[str, Dict[str, str]]:
     """
     Discover CLI exports from all apps in ./apps/.
@@ -251,7 +499,12 @@ def create_clanker_toolset() -> FunctionToolset:
 
     # Add core Clanker tools first
     toolset.add_function(launch_coding_tool)
-    logger.debug("Added core tool: launch_coding_tool")
+    toolset.add_function(daemon_list)
+    toolset.add_function(daemon_start)
+    toolset.add_function(daemon_stop)
+    toolset.add_function(daemon_logs)
+    toolset.add_function(daemon_kill_all)
+    logger.debug("Added core tools: launch_coding_tool, daemon management")
 
     # Add CLI export tools from apps
     for app_name, app_exports in exports.items():

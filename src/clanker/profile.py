@@ -43,6 +43,7 @@ class Profile:
         self.data_root.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         self.vault_root.mkdir(parents=True, exist_ok=True)
+        self.daemons_dir.mkdir(parents=True, exist_ok=True)
     
     @property
     def data_root(self) -> Path:
@@ -63,6 +64,11 @@ class Profile:
     def logs_dir(self) -> Path:
         """Directory for log files."""
         return self._data_root / "logs"
+    
+    @property
+    def daemons_dir(self) -> Path:
+        """Directory for daemon PID files."""
+        return self._data_root / "daemons"
     
     @property
     def log_file(self) -> Path:
