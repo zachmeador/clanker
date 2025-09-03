@@ -50,32 +50,13 @@ def get_tool_display_info(tool_name: str) -> dict:
     if tool_name in TOOL_DISPLAY:
         return TOOL_DISPLAY[tool_name]
     
-    # CLI export pattern: appname_command
-    # Need to find the correct split point by checking discovered exports
-    if "_" in tool_name:
-        exports = discover_cli_exports()
-        for app_name, app_exports in exports.items():
-            for export_name in app_exports.keys():
-                expected_tool_name = f"{app_name}_{export_name}"
-                if tool_name == expected_tool_name:
-                    return {
-                        "name": f"{app_name} {export_name}",
-                        "description": f"Run {export_name} from {app_name} app"
-                    }
-        
-        # Fallback to simple split if not found in exports
-        parts = tool_name.split("_", 1)
-        if len(parts) == 2:
-            app, command = parts
-            return {
-                "name": f"{app} {command}",
-                "description": f"Run {command} from {app} app"
-            }
+    # For app tools, just create a readable name from the tool name
+    # Replace underscores with spaces and capitalize appropriately
+    display_name = tool_name.replace("_", " ")
     
-    # Fallback
     return {
-        "name": tool_name,
-        "description": ""
+        "name": display_name,
+        "description": f"Run {display_name}"
     }
 
 
@@ -483,6 +464,8 @@ def create_tool_function(app_name: str, export_name: str, cli_template: str) -> 
     # Set metadata
     tool_function.__name__ = f"{app_name}_{export_name}"
     tool_function.__doc__ = f"Execute {app_name} {export_name} command"
+    tool_function.__app_name__ = app_name
+    tool_function.__export_name__ = export_name
 
     return tool_function
 
