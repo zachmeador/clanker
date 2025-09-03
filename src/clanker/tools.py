@@ -79,18 +79,27 @@ def launch_coding_tool(tool: str, query: str) -> str:
         # Generate context using coding_session_context
         try:
             from .context import coding_session_context
-            content = coding_session_context(tool, query)
+            full_context = coding_session_context(tool, query)
             
-            # Use tool-specific filename if needed
-            context_file = "CLAUDE.md" if tool_lower == "claude" else "CLANKER_CONTEXT.md"
+            # Use tool-specific filename for each tool
+            context_files = {
+                "claude": "CLAUDE.md",
+                "gemini": "GEMINI.md",
+                "cursor": "CLANKER_CONTEXT.md",
+            }
+            context_file = context_files.get(tool_lower, "CLANKER_CONTEXT.md")
             
+            # Write context file for reference
             with open(context_file, "w") as f:
-                f.write(content)
+                f.write(full_context)
             logger.info(f"Generated {context_file} with Clanker session context for {tool}")
+            
+            # Build the full query with context included
+            context_query = f"{full_context}\n\n---\n\n**User Request**: {query}" if query else full_context
 
         except Exception as e:
-            error_msg = f"❌ Failed to write context file: {e}"
-            logger.error(f"Launch tool failed to write context: {e}")
+            error_msg = f"❌ Failed to generate context: {e}"
+            logger.error(f"Launch tool failed to generate context: {e}")
             return error_msg
 
         # Launch the coding tool with proper TTY allocation
@@ -111,9 +120,17 @@ def launch_coding_tool(tool: str, query: str) -> str:
             for key in api_keys_to_remove:
                 os.environ.pop(key, None)
 
+            # Build command arguments with full context
+            if tool_lower == "gemini":
+                # Gemini uses -i flag for interactive mode with query
+                cmd_args = [cli_command, "-i", context_query]
+            else:
+                # Claude and Cursor accept query directly
+                cmd_args = [cli_command, context_query]
+            
             # Use os.execvp to replace the current process with the tool
             # This gives us a clean session with the modified environment
-            os.execvp(cli_command, [cli_command])
+            os.execvp(cli_command, cmd_args)
 
             # This code never executes - process is replaced above
 
