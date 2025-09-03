@@ -27,7 +27,7 @@ USAGE_TEXT = """{app_name} - LLM app environment
 Usage:
   clanker                    - Launch interactive console
   clanker [request]          - Natural language request (one-shot)
-  clanker <tool> [request]   - Launch coding tool directly (claude, cursor, windsurf, code)
+  clanker <tool> [request]   - Launch coding tool directly (claude, cursor, gemini)
   clanker app <command>      - App management
   clanker system <command>   - System management
 
@@ -54,7 +54,7 @@ HELP_MESSAGE = "Use 'clanker system help' for help"
 
 
 # Supported coding tools
-CODING_TOOLS = {"claude", "cursor", "windsurf", "code"}
+CODING_TOOLS = {"claude", "cursor", "gemini"}
 
 # Simple module-level instances - lazy initialized
 _agent: Optional[ClankerAgent] = None
@@ -266,7 +266,7 @@ def handle_launch_command(args: List[str]):
     """Handle launch command for coding tools."""
     if not args:
         typer.echo("Usage: clanker system launch <tool> [--app <app_name>] [--request <request>]")
-        typer.echo("Tools: claude, cursor, windsurf, code")
+        typer.echo("Tools: claude, cursor, gemini")
         return
 
     tool_name = args[0]

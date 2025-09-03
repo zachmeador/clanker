@@ -52,10 +52,10 @@ def coding_session_context(tool_name: str, user_request: str) -> str:
     """Build context for coding CLI sessions launched from Clanker.
     
     Combines agent-like context with INSTRUCTIONS.md and session info.
-    Supports various tools like Claude Code, Cursor, Windsurf, etc.
+    Supports various tools like Claude Code, Cursor, Gemini, etc.
     
     Args:
-        tool_name: Name of the coding tool (e.g., "claude", "cursor", "windsurf")
+        tool_name: Name of the coding tool (e.g., "claude", "cursor", "gemini")
         user_request: The user's request/intent for the session
         
     Returns:
