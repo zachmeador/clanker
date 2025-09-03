@@ -6,15 +6,15 @@
     - user can say "i want to build an app that does blah" and clanker will delegate this to a default or user specified llm dev tool, like claude code, gemini-cli, others, your own, etc.
     - user can say "i want to [do some thing that an app in this environment can do]" and clanker will smartly route to an llm chat, or run the app directly.
 
-### need to think on
-
-- if tools should be made for apps, as interfaces, or if it's just context construction + terminal use tools
-- how much clanker wants to be another llm chat cli app (it doesn't at all)
-- api key management. i want simple and assume high user capability. apps and clanker will use this.
+### implemented, mostly?
+- simple centralized api key management with model routing based on provider avail
+    - needs some minor refining probably
 - there's a great pattern idea in my head. clanker scaffolds out an app, creates the dir and stuff, then creates a llm-cli instance with a custom context explaining, then the user continues developing with that.
     - when clanker is prompted to work on a new app? 
-- there needs to be a central abstraction for the available model types to clanker and its apps. a smart and simple design for knowing what ai providers the user has given clanker, and what their available models are. 
-- a universal way to always have something like a CLAUDE.md. INSTRUCTIONS.md could be the general term.
+- cli tool launching with starting context + creation of context docs (CLAUDE.md)
+
+### need to think on
+
 - what is a conversation in clanker?
     - user runs `clanker what are my apps` this is a conversation
     - multi-step: `clanker add a good spaghetti recipe` -> clanker responds conversationally with user `how's this? x` -> user approves
@@ -68,3 +68,54 @@ what clanker does
 # fake user "stories"
 
 - semi-technical user types in `clanker make a fun geocities style website about penguins`. what happens? what are they expecting?
+
+
+
+# later features / things to consider
+
+- git worktree creation/management for cli tools
+- clanker being modular in its scope
+    - clanker environment -> developing small apps in clanker
+    - clanker cli, any CWD -> coding cli launcher, starting context manager? 
+
+## app ideas
+
+- something like a fully automated obsidian vault with basic md publishing utilities. stores in vault, user could i guess point obsidian to that vault dir and use it that way too?
+- a silly weather app that knows that *exact* weather i like and tells me to go outside.
+
+### recipes
+
+... for when i get the recipes app migrated.
+
+- chicken soup with rice
+
+## for the non-technical people
+
+- install and usage flow of clanker should be as easy as possible. a curl sh?
+- guide users to getting api keys from providers
+
+# daemons
+
+- daemon session management. i don't think we want a monolithic schedule or loop. yeah we definitely don't. 
+    - task scheduling. if a clanker user wants an app that does some thing like checking if the weather is some combination of things, that needs to run on a schedule. 
+    
+- user can do `clanker what apps are running rn` and clanker calls some tool that checks the clanker app daemons
+- apps use the clanker library to stand up their own simple and easy to tear down loops. clanker apps stick to a tight (but lightweight) convention
+
+example app that runs at x interval, checks some weather apis, logs it to the vault. simple scheduler, but it should be a service unique to the app.
+
+"bbbut why not have just one service handle all of this??" because it's like, kB of ram? who cares? this is cleaner and isn't tightly coupled
+
+but. clanker needs to be robust and work consistently in all environments. if the user wants an app daemon to run at system startup, there should be conventions for this and it should be seamless, a config switch.
+
+the primary way the user interacts with clanker is by its agent. so a user can do `clanker kill all running daemons please`, `clanker what daemons are running`
+- then reserved keywords in the cli: `clanker daemon [list, etc]`
+- so obviously that means the current tools system needs new tools
+    - and discoverability logic for seeing if an app has 
+- daemons log to data/[profile]/logs/ to their own log files. does basic rotation.
+
+the apps themselves, for now, don't need a cli for daemon management. the user can add those if they want.
+
+## out of scope things:
+- daemons depending on others to be running
+- ?
