@@ -163,16 +163,57 @@ Guidelines:
             'tool_output': tool_output
         }
 
-    def get_available_tools(self) -> Dict[str, Dict[str, str]]:
-        """Get information about available tools with display metadata."""
+    def get_available_tools(self) -> Dict[str, Dict[str, Any]]:
+        """Get information about available tools with display metadata and parameter info."""
         from .tools import get_tool_display_info
+        import json
         
         available_tools = {}
         if hasattr(self.agent, 'toolsets'):
             for toolset in self.agent.toolsets:
                 if hasattr(toolset, 'tools') and toolset.tools:
-                    for tool_name in toolset.tools.keys():
-                        available_tools[tool_name] = get_tool_display_info(tool_name)
+                    for tool_name, tool_obj in toolset.tools.items():
+                        # Get basic display info
+                        tool_info = get_tool_display_info(tool_name)
+                        
+                        # Extract parameter information from the tool object
+                        parameters = []
+                        if hasattr(tool_obj, 'parameters_json_schema') and tool_obj.parameters_json_schema:
+                            try:
+                                schema = tool_obj.parameters_json_schema
+                                if isinstance(schema, dict) and 'properties' in schema:
+                                    required = schema.get('required', [])
+                                    for param_name, param_info in schema['properties'].items():
+                                        param_type = param_info.get('type', 'any')
+                                        # Convert JSON schema types to Python types
+                                        type_map = {
+                                            'string': 'str',
+                                            'integer': 'int', 
+                                            'number': 'float',
+                                            'boolean': 'bool',
+                                            'array': 'list',
+                                            'object': 'dict'
+                                        }
+                                        python_type = type_map.get(param_type, param_type)
+                                        
+                                        param_info_dict = {
+                                            'name': param_name,
+                                            'type': python_type,
+                                            'required': param_name in required,
+                                            'description': param_info.get('description', '')
+                                        }
+                                        
+                                        # Add default value if available
+                                        if 'default' in param_info:
+                                            param_info_dict['default'] = param_info['default']
+                                        
+                                        parameters.append(param_info_dict)
+                            except Exception as e:
+                                logger.debug(f"Failed to parse parameters for {tool_name}: {e}")
+                        
+                        tool_info['parameters'] = parameters
+                        available_tools[tool_name] = tool_info
+        
         return available_tools
 
 

@@ -175,15 +175,40 @@ class InteractiveConsole:
         
     
     def show_available_tools(self):
-        """Display available tools."""
+        """Display available tools with parameter information."""
         console.print("\n[bold]Available Tools[/bold]")
 
         tools = self.agent.get_available_tools()
         if tools:
             for tool_name, info in tools.items():
-                console.print(f"  • [cyan]{info['name']}[/cyan]")
-                if info['description']:
+                # Build parameter signature
+                params_str = ""
+                if info.get('parameters'):
+                    param_parts = []
+                    for param in info['parameters']:
+                        param_str = f"{param['name']}: {param['type']}"
+                        if not param['required']:
+                            if 'default' in param:
+                                param_str += f" = {param['default']}"
+                            else:
+                                param_str += " = ?"
+                        param_parts.append(param_str)
+                    params_str = f"({', '.join(param_parts)})"
+                else:
+                    params_str = "()"
+                
+                # Display tool with signature
+                console.print(f"  • [cyan]{info['name']}{params_str}[/cyan]")
+                
+                # Show description
+                if info.get('description'):
                     console.print(f"    [dim]{info['description']}[/dim]")
+                
+                # Show parameter details if they have descriptions
+                if info.get('parameters'):
+                    for param in info['parameters']:
+                        if param.get('description'):
+                            console.print(f"    [dim yellow]  {param['name']}:[/dim yellow] [dim]{param['description']}[/dim]")
         else:
             console.print("[dim]No tools configured[/dim]")
     
