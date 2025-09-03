@@ -27,8 +27,14 @@ USAGE_TEXT = """{app_name} - LLM app environment
 Usage:
   clanker                    - Launch interactive console
   clanker [request]          - Natural language request (one-shot)
+  clanker <tool> [request]   - Launch coding tool directly (claude, cursor, windsurf, code)
   clanker app <command>      - App management
   clanker system <command>   - System management
+
+Coding Tools:
+  clanker claude [request]   - Launch Claude Code with context
+  clanker cursor [request]   - Launch Cursor-agent with context  
+  clanker gemini [request]   - Launch Gemini CLI with context
 
 App Commands:
   clanker app list           - List available apps
@@ -40,12 +46,15 @@ System Commands:
   clanker system models      - Show available AI models
   clanker system profile     - Manage profiles
   clanker system config      - Configuration settings
-  clanker system launch      - Launch coding tools with context
+  clanker system launch      - Launch coding tools with advanced options
   clanker system help        - Show help
   clanker system version     - Show version"""
 
 HELP_MESSAGE = "Use 'clanker system help' for help"
 
+
+# Supported coding tools
+CODING_TOOLS = {"claude", "cursor", "windsurf", "code"}
 
 # Simple module-level instances - lazy initialized
 _agent: Optional[ClankerAgent] = None
@@ -84,7 +93,14 @@ def main(
             raise typer.Exit(1)
         return
 
-    # Resolve input type
+    # Check if first argument is a coding tool
+    if args[0].lower() in CODING_TOOLS:
+        tool_name = args[0].lower()
+        request = " ".join(args[1:]) if len(args) > 1 else "general development work"
+        handle_coding_tool_command(tool_name, request)
+        return
+
+    # Resolve input type for other commands
     resolution = _resolver.resolve(args)
 
     if resolution["type"] == "system_command":
@@ -116,6 +132,21 @@ def main(
     else:
         # Fallback
         typer.echo(f"Unknown command type: {resolution['type']}")
+        raise typer.Exit(1)
+
+
+def handle_coding_tool_command(tool_name: str, request: str):
+    """Handle direct coding tool launch commands."""
+    logger.info(f"Launching {tool_name} with request: '{request}'")
+    
+    from .tools import launch_coding_tool
+    try:
+        result = launch_coding_tool(tool_name, request)
+        # If we get here, launch failed - show error
+        if result and result.startswith("❌"):
+            typer.echo(result, err=True)
+    except Exception as e:
+        typer.echo(f"Launch failed: {e}", err=True)
         raise typer.Exit(1)
 
 
@@ -169,14 +200,20 @@ def handle_app_command(args: List[str]):
             typer.echo("Usage: clanker app info <name>")
             return
         app_name = sub_args[0]
-        # Get app info from resolver
-        app_info = state.resolver.get_app_info(app_name)
+        # Get app info from apps module
+        from . import apps as apps_module
+        discovered = apps_module.discover()
+        app_info = discovered.get(app_name)
         if app_info:
             typer.echo(f"App: {app_name}")
             if app_info.get('description'):
                 typer.echo(f"Description: {app_info['description']}")
-            if app_info.get('commands'):
-                typer.echo(f"Commands: {', '.join(app_info['commands'])}")
+            if app_info.get('exports'):
+                typer.echo(f"CLI Exports: {', '.join(app_info['exports'])}")
+            if app_info.get('entry'):
+                typer.echo(f"Entry: {app_info['entry']}")
+            if app_info.get('path'):
+                typer.echo(f"Path: {app_info['path']}")
         else:
             typer.echo(f"App '{app_name}' not found")
     elif subcommand == "scaffold":
@@ -229,7 +266,7 @@ def handle_launch_command(args: List[str]):
     """Handle launch command for coding tools."""
     if not args:
         typer.echo("Usage: clanker system launch <tool> [--app <app_name>] [--request <request>]")
-        typer.echo("Tools: claude, cursor, generic")
+        typer.echo("Tools: claude, cursor, windsurf, code")
         return
 
     tool_name = args[0]
@@ -257,11 +294,11 @@ def handle_launch_command(args: List[str]):
     query = " ".join(query_parts) if query_parts else "general development work"
 
     # Use the same launch tool as the agent
-    from .tools import launch_claude_code
+    from .tools import launch_coding_tool
     try:
-        result = launch_claude_code(query)
+        result = launch_coding_tool(tool_name, query)
         # If we get here, launch failed - show error
-        if result:
+        if result and result.startswith("❌"):
             typer.echo(result, err=True)
     except Exception as e:
         typer.echo(f"Launch failed: {e}", err=True)

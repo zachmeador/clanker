@@ -31,8 +31,9 @@ def cli_session_context(
     apps_context = get_available_apps_context()
     builder.add(apps_context, "Available Apps")
     
-    # Add development patterns
+    # Add development patterns and export system details
     builder.add_snippet("cli_patterns")
+    builder.add_snippet("export_system")
     
     # Add app-specific context if specified
     if app_name:
@@ -43,6 +44,66 @@ def cli_session_context(
     # Add user request if provided
     if user_request:
         builder.add(user_request, "User Request")
+    
+    return builder.build()
+
+
+def coding_session_context(tool_name: str, user_request: str) -> str:
+    """Build context for coding CLI sessions launched from Clanker.
+    
+    Combines agent-like context with INSTRUCTIONS.md and session info.
+    Supports various tools like Claude Code, Cursor, Windsurf, etc.
+    
+    Args:
+        tool_name: Name of the coding tool (e.g., "claude", "cursor", "windsurf")
+        user_request: The user's request/intent for the session
+        
+    Returns:
+        Complete context document for the coding session
+    """
+    builder = ContextBuilder()
+    
+    # Add session header
+    tool_display = tool_name.title() if tool_name else "Coding"
+    session_header = f"""# Clanker {tool_display} Session
+
+This {tool_display} session was launched from Clanker. You have full context about the Clanker system 
+and should help with development tasks within this environment.
+
+---
+"""
+    builder.add(session_header.strip())
+    
+    # Load and add INSTRUCTIONS.md content
+    try:
+        project_root = Path(__file__).resolve().parent.parent.parent
+        instructions_path = project_root / "INSTRUCTIONS.md"
+        if instructions_path.exists():
+            instructions = instructions_path.read_text()
+            # Remove the first # header since we have our own
+            if instructions.startswith("# "):
+                instructions = instructions[instructions.find("\n") + 1:]
+            builder.add(instructions.strip())
+    except Exception:
+        pass  # Gracefully continue without INSTRUCTIONS.md
+    
+    # Add a separator before dynamic content
+    builder.add("---\n## Current System State")
+    
+    # Add the same base context as the agent
+    builder.add_snippet("clanker_overview")
+    
+    # Add dynamically discovered apps
+    apps_context = get_available_apps_context()
+    builder.add(apps_context, "Available Apps")
+    
+    # Add CLI patterns and export system
+    builder.add_snippet("cli_patterns") 
+    builder.add_snippet("export_system")
+    
+    # Add user request
+    if user_request:
+        builder.add(f"**User Request**: {user_request}", "Session Intent")
     
     return builder.build()
 

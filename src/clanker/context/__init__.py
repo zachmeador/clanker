@@ -2,7 +2,7 @@
 
 from .builder import ContextBuilder
 from .store import ContextStore
-from .templates import cli_session_context, app_scaffold_context, get_available_apps_context
+from .templates import cli_session_context, app_scaffold_context, get_available_apps_context, coding_session_context
 
 __all__ = [
     "ContextBuilder",
@@ -10,5 +10,6 @@ __all__ = [
     "cli_session_context",
     "app_scaffold_context",
     "get_available_apps_context",
+    "coding_session_context",
 ]
 

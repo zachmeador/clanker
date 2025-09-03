@@ -16,9 +16,9 @@ logger = get_logger("tools")
 
 # Tool display metadata for console
 TOOL_DISPLAY = {
-    "launch_claude_code": {
-        "name": "Launch Claude Code",
-        "description": "Start a coding session with context"
+    "launch_coding_tool": {
+        "name": "Launch Coding Tool",
+        "description": "Start a coding session with any CLI coding tool"
     }
 }
 
@@ -46,52 +46,58 @@ def get_tool_display_info(tool_name: str) -> dict:
     }
 
 
-def launch_claude_code(query: str) -> str:
-    """Launch an interactive Claude Code session with Clanker context.
+def launch_coding_tool(tool: str, query: str) -> str:
+    """Launch an interactive coding CLI session with Clanker context.
 
     This tool generates appropriate context for the given query and launches
-    Claude Code with that context. The session will be interactive and allow
-    you to work on your project with full context awareness.
+    the specified coding tool (Claude, Cursor, Windsurf, etc.). The session 
+    will be interactive with full context about the Clanker system.
 
     Args:
+        tool: The coding tool to launch (e.g., "claude", "cursor")
         query: Description of what you want to work on (e.g., "work on the recipe app", "add new features")
 
     Returns:
         Status message about the launch
     """
     try:
-        logger.info(f"Launch tool called with query: {query}")
+        logger.info(f"Launch tool called for {tool} with query: {query}")
 
-        # Extract potential app name from query
-        app_name = None
-        query_lower = query.lower()
+        # Map tool names to their CLI commands
+        tool_commands = {
+            "claude": "claude",
+            "cursor": "cursor-agent",
+            "gemini": "gemini",
+        }
+        
+        tool_lower = tool.lower()
+        if tool_lower not in tool_commands:
+            return f"❌ Unknown coding tool: {tool}. Supported tools: {', '.join(tool_commands.keys())}"
+        
+        cli_command = tool_commands[tool_lower]
 
-        # Simple app detection - look for app names in the query
-        if "recipe" in query_lower:
-            app_name = "recipe"  # This could be more sophisticated
-        elif "example" in query_lower:
-            app_name = "example"
-
-        # Generate context
-        from clanker.context.templates import cli_session_context
-        context = cli_session_context("claude", app_name, query)
-
-        # Write context file
+        # Generate context using coding_session_context
         try:
-            with open("CLAUDE.md", "w") as f:
-                f.write(context)
-            logger.info("Generated CLAUDE.md with context")
+            from .context import coding_session_context
+            content = coding_session_context(tool, query)
+            
+            # Use tool-specific filename if needed
+            context_file = "CLAUDE.md" if tool_lower == "claude" else "CLANKER_CONTEXT.md"
+            
+            with open(context_file, "w") as f:
+                f.write(content)
+            logger.info(f"Generated {context_file} with Clanker session context for {tool}")
 
         except Exception as e:
-            error_msg = f"❌ Failed to write CLAUDE.md: {e}"
+            error_msg = f"❌ Failed to write context file: {e}"
             logger.error(f"Launch tool failed to write context: {e}")
             return error_msg
 
-        # Launch Claude Code with proper TTY allocation
+        # Launch the coding tool with proper TTY allocation
         try:
-            logger.info("Launching Claude Code session with pseudo-terminal")
+            logger.info(f"Launching {tool} session with pseudo-terminal")
 
-            # Clean environment for Claude Code (remove API keys that might conflict)
+            # Clean environment for coding tools (remove API keys that might conflict)
             api_keys_to_remove = [
                 'ANTHROPIC_API_KEY',
                 'OPENAI_API_KEY',
@@ -105,21 +111,22 @@ def launch_claude_code(query: str) -> str:
             for key in api_keys_to_remove:
                 os.environ.pop(key, None)
 
-            # Use os.execvp to replace the current process with claude
-            # This gives us a clean claude session with the modified environment
-            os.execvp("claude", ["claude"])
+            # Use os.execvp to replace the current process with the tool
+            # This gives us a clean session with the modified environment
+            os.execvp(cli_command, [cli_command])
 
             # This code never executes - process is replaced above
 
         except FileNotFoundError:
-            error_msg = "❌ Claude Code not found. Please install Claude CLI first."
-            error_msg += "\n💡 Visit: https://docs.anthropic.com/claude/docs/desktop-setup"
-            logger.error("Claude command not found")
+            error_msg = f"❌ {tool} not found. Please install {tool} first."
+            if tool_lower == "claude":
+                error_msg += "\n💡 Visit: https://docs.anthropic.com/claude/docs/desktop-setup"
+            logger.error(f"{tool} command not found")
             return error_msg
 
         except Exception as e:
-            error_msg = f"❌ Failed to launch Claude Code: {e}"
-            logger.error(f"Launch tool failed to start claude: {e}")
+            error_msg = f"❌ Failed to launch {tool}: {e}"
+            logger.error(f"Launch tool failed to start {tool}: {e}")
             return error_msg
 
     except Exception as e:
@@ -220,14 +227,14 @@ def create_clanker_toolset() -> FunctionToolset:
     Create the main clanker toolset with all CLI export tools and core tools.
 
     This creates tools from all apps that have [tool.clanker.exports] in their pyproject.toml,
-    plus core Clanker tools like launch_claude_code.
+    plus core Clanker tools like launch_coding_tool.
     """
     exports = discover_cli_exports()
     toolset = FunctionToolset()
 
     # Add core Clanker tools first
-    toolset.add_function(launch_claude_code)
-    logger.debug("Added core tool: launch_claude_code")
+    toolset.add_function(launch_coding_tool)
+    logger.debug("Added core tool: launch_coding_tool")
 
     # Add CLI export tools from apps
     for app_name, app_exports in exports.items():
