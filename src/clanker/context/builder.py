@@ -20,7 +20,7 @@ class ContextBuilder:
             Self for method chaining
         """
         if title:
-            section = f"# {title}\n\n{content}"
+            section = f"## {title}\n\n{content}"
         else:
             section = content
             

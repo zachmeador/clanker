@@ -43,12 +43,11 @@ class ClankerAgent:
 
     def _get_system_prompt(self) -> str:
         """Get the system prompt for the agent."""
-        from .context import ContextBuilder, ContextStore
-        from .context.templates import _get_available_apps_context
+        from .context import ContextBuilder, ContextStore, get_available_apps_context
         
         store = ContextStore()
         clanker_overview = store.get("clanker_overview") or ""
-        available_apps = _get_available_apps_context()
+        available_apps = get_available_apps_context()
         cli_patterns = store.get("cli_patterns") or ""
         export_system = store.get("export_system") or ""
 

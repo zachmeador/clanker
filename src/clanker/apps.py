@@ -8,9 +8,15 @@ from pathlib import Path
 from typing import Dict, Optional, List, Any
 
 
+def _project_root() -> Path:
+    """Resolve the project root directory regardless of CWD."""
+    # apps.py is at src/clanker/apps.py → project root is three parents up
+    return Path(__file__).resolve().parent.parent.parent
+
+
 def discover() -> Dict[str, dict]:
     """Find runnable things in ./apps."""
-    apps_dir = Path("./apps")
+    apps_dir = _project_root() / "apps"
     if not apps_dir.exists():
         return {}
     
