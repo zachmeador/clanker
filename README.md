@@ -73,6 +73,30 @@ The storage system provides:
 
 Apps can use any storage they want - this is just provided for convenience.
 
+## Coding CLI Integration
+
+Launch coding tools directly from Clanker with full system context:
+
+```bash
+clanker "open claude code to work on my recipe app"
+clanker "use cursor to fix the weather daemon"
+```
+
+**In the Interactive Console:**
+```bash
+You: I want to work on the weather daemon using Claude Code
+Clanker: I'll launch Claude Code with full context...
+
+[Launches Claude Code with complete Clanker environment context]
+```
+
+**Supported Tools:**
+- **Claude Code** - Natural language like "claude" or "claude code"
+- **Cursor** - Reference as "cursor" or "cursor editor"
+- **Gemini** - Google's coding assistant
+
+The tool opens with comprehensive context about your apps, architecture, and development patterns for seamless coding sessions.
+
 ## Structure
 
 ```
