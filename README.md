@@ -14,15 +14,21 @@ $ clanker
 ╰──────────────────────────────────────────╯
 Try: 'list my apps', 'what recipes do I have', 'help me with...'
 
-
 You: tldr, what can you do?
 
-Clanker: I can help with running Clanker apps and managing their functions, such as executing commands, checking statuses, and starting or stopping daemons. I can also assist with development tasks and provide contextual information about the Clanker system. 
+Clanker: I can help with running Clanker apps and managing their functions, such as executing commands, checking statuses, and starting or stopping daemons. I can also assist with development tasks and provide contextual information about the Clanker system.
 ```
+
+The console provides:
+- **Streaming responses** - Real-time output as the AI processes your request
+- **Tool visibility** - See exactly which tools are being called and their parameters
+- **Context awareness** - Maintains conversation history for better responses
+- **Interactive commands** - Use `context`, `tools`, and `help` for console management
+- **Natural language queries** - Ask questions conversationally instead of using complex commands
 
 ## How Apps Work
 
-Apps are CLI tools that export commands as AI functions:
+Apps are CLI tools that export both commands and daemons as AI functions:
 
 ```toml
 # apps/recipes/pyproject.toml
@@ -30,9 +36,18 @@ Apps are CLI tools that export commands as AI functions:
 add = "python main.py add {recipe}"
 search = "python main.py search {query}"
 list = "python main.py list"
+
+[tool.clanker.daemons]
+web_server = "python main.py serve --port 8000"
+background_worker = "python main.py worker --threads 4"
 ```
 
-The agent can now call these as tools. Each app runs in its own `uv` environment.
+The agent can:
+- **Execute CLI commands** - Run app functions as tools with parameters
+- **Manage daemons** - Start, stop, and monitor background processes
+- **Access storage** - Use isolated file storage and shared databases
+
+Each app runs in its own `uv` environment with automatic tool discovery and daemon management.
 
 ## Optional Storage System
 
@@ -42,13 +57,19 @@ Clanker provides optional storage abstractions in `src/clanker/storage/`:
 from clanker.storage import AppVault, AppDB
 
 # App-isolated file storage with permissions
-vault = AppVault("my-app", vault_root, db_path)
-vault.save_yaml("config.yaml", {"setting": "value"})
-vault.grant_permission("other-app", "read")
+vault = AppVault.for_app("my-app")
+vault.write("config.yaml", {"setting": "value"})
+vault.grant_permission("my-app", "other-app", read=True)
 
 # Shared SQLite with app-scoped access
 db = AppDB("my-app", db_path)
 ```
+
+The storage system provides:
+- **AppVault** - Isolated file storage with cross-app permission controls
+- **AppDB** - Shared SQLite database with app-scoped table access
+- **Automatic isolation** - Apps can only access their own data by default
+- **Permission grants** - Explicit permissions required for cross-app access
 
 Apps can use any storage they want - this is just provided for convenience.
 
