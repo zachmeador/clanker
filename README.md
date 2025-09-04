@@ -4,6 +4,10 @@ It's like a little operating system for your AI made applications.
 
 Designed to be extended and used by LLMs.
 
+## Project Status
+
+Clanker is currently in active prototyping/alpha. 
+
 ## The Console Experience
 
 ```bash
