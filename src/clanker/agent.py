@@ -55,6 +55,7 @@ class ClankerAgent:
         available_apps = get_available_apps_context()
         cli_patterns = store.get("cli_patterns") or ""
         export_system = store.get("export_system") or ""
+        personality = store.get("personality") or ""
 
         return f"""{clanker_overview}
 
@@ -78,7 +79,9 @@ Guidelines:
 - Be helpful and direct
 - Use tools for app-related requests
 - Explain what you're doing after using tools
-- Use the context information above to provide accurate responses"""
+- Use the context information above to provide accurate responses
+
+{personality}"""
 
     def handle_request(self, request: str) -> dict:
         """Handle a natural language request.
