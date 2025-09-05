@@ -83,8 +83,9 @@ the user is free to do whatever but this is not convention.
 - at some point, giving clanker some code editing abilities will make sense. 
     - rn claude opus for planning -> grok-code-fast-1 for execution, is very powerful
 - also thinking about a pattern of clanker moving the user to another agent console, rare but useful for a few things
+- needs a web search and web fetch tool. or could just call a cli tool for this?
 
-- later, thinking about ways to make integrations or external databases have clanker conventions.
+- later, what about an extremely simple console ui sdk? prefabs for a couple menu types or dialogs idk
 
 ## app ideas
 
@@ -115,6 +116,7 @@ the user is free to do whatever but this is not convention.
 - if a testing convention was done in clanker it would be the most low effort possible. like "hey clanker does my weather app work" and it just runs it for a few mins and tells you what broke. no jest configs or whatever
 - development workflows: the agent-driven deployment thing is the key insight. "clanker my weather daemon is acting weird in prod" -> it switches you to a debug session, shows logs, maybe spins up a staging copy to compare
 - mcp exporting is actually huge. clanker apps become tools for any mcp client, not just clanker itself. could be the distribution mechanism - your recipes app works in cursor, claude desktop, whatever
+    - also tools that hit the clanker agent?
 
 ### claude opus's takes 9/4/2025:
 ```
@@ -125,8 +127,6 @@ the user is free to do whatever but this is not convention.
 
   App versioning/rollback - As apps evolve, you'll need migration strategies and the ability to
   pin/rollback versions.
-
-  Resource limits - CPU/memory quotas per app, rate limiting on API calls, storage quotas.
 
   App marketplace/sharing - Enable users to share/discover apps. Git-based distribution? Package
   registry?
