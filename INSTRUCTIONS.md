@@ -103,6 +103,14 @@ sync = "python sync_daemon.py"
 - `daemon_stop(app, daemon_id)` - Stop specific daemon
 - `daemon_logs(app, daemon_id)` - View recent logs
 - `daemon_kill_all()` - Emergency stop all daemons
+- `daemon_status(app, daemon_id)` - Show one daemon's status
+- `daemon_restart(app, daemon_id)` - Restart a daemon
+- `daemon_enable_autostart(app, daemon_id)` - Enable autostart
+- `daemon_disable_autostart(app, daemon_id)` - Disable autostart
+- `daemon_start_enabled()` - Start all enabled daemons
+- `daemon_autostart_list()` - List daemons with autostart enabled
+
+Auto-start: Any daemons enabled via `daemon_enable_autostart(app, daemon_id)` are started automatically when the `clanker` CLI launches (interactive or command mode). This runs once per CLI invocation and skips daemons already running.
 
 ### Daemon Implementation
 ```python
