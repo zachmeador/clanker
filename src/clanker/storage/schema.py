@@ -101,9 +101,23 @@ class DatabaseSchema:
             
             # Record current schema version
             conn.execute("INSERT OR IGNORE INTO _schema_version (version) VALUES (1)")
-            
+
+            # Ensure backward-compatible columns exist for _daemons
+            # Adds: exit_code (INTEGER), ended_at (TEXT)
+            try:
+                def _column_exists(table: str, column: str) -> bool:
+                    cur = conn.execute(f"PRAGMA table_info({table})")
+                    return any(row[1] == column for row in cur.fetchall())
+
+                if not _column_exists("_daemons", "exit_code"):
+                    conn.execute("ALTER TABLE _daemons ADD COLUMN exit_code INTEGER")
+                if not _column_exists("_daemons", "ended_at"):
+                    conn.execute("ALTER TABLE _daemons ADD COLUMN ended_at TEXT")
+            except Exception as e:
+                logger.warning(f"Schema column ensure failed: {e}")
+
             conn.commit()
-            
+
         logger.info("Database schema initialized successfully")
     
     def get_schema_version(self) -> Optional[int]:
@@ -143,13 +157,13 @@ def init_database(profile: Optional[Profile] = None) -> None:
 
 
 def ensure_database_initialized(profile: Optional[Profile] = None) -> None:
-    """Ensure database is initialized, initializing if needed.
-    
+    """Ensure database schema exists and is up-to-date (idempotent).
+
+    Always runs initialization logic which safely creates missing tables and
+    columns. Re-running is safe due to IF NOT EXISTS and column checks.
+
     Args:
         profile: Profile for database path (uses current if not provided)
     """
     schema = DatabaseSchema(profile)
-    if not schema.is_initialized():
-        schema.init_database()
-    else:
-        logger.debug("Database schema already initialized")
+    schema.init_database()

@@ -33,6 +33,10 @@ TOOL_DISPLAY = {
         "name": "Stop Daemon", 
         "description": "Stop a specific app daemon"
     },
+    "daemon_restart": {
+        "name": "Restart Daemon",
+        "description": "Restart a specific app daemon"
+    },
     "daemon_logs": {
         "name": "View Daemon Logs",
         "description": "View recent log output from a daemon"
@@ -40,7 +44,27 @@ TOOL_DISPLAY = {
     "daemon_kill_all": {
         "name": "Kill All Daemons",
         "description": "Emergency stop all running daemons"
-    }
+    },
+    "daemon_status": {
+        "name": "Daemon Status",
+        "description": "Show status for one daemon"
+    },
+    "daemon_enable_autostart": {
+        "name": "Enable Autostart",
+        "description": "Enable autostart for a daemon"
+    },
+    "daemon_disable_autostart": {
+        "name": "Disable Autostart",
+        "description": "Disable autostart for a daemon"
+    },
+    "daemon_start_enabled": {
+        "name": "Start Enabled Daemons",
+        "description": "Start all daemons marked autostart"
+    },
+    "daemon_autostart_list": {
+        "name": "List Autostart Daemons",
+        "description": "List daemons with autostart enabled"
+    },
 }
 
 def get_tool_display_info(tool_name: str) -> dict:
@@ -185,15 +209,26 @@ def daemon_list() -> str:
         for daemon in daemons:
             app_daemon = f"{daemon['app_name']}:{daemon['daemon_id']}"
             status = daemon['status']
-            
             if status == DaemonStatus.RUNNING:
                 uptime_str = f"{daemon['uptime']:.1f}s" if daemon['uptime'] else "unknown"
                 memory_str = f"{daemon['memory_mb']:.1f}MB" if daemon['memory_mb'] else "unknown"
                 output.append(f"✓ {app_daemon:30} RUNNING (PID: {daemon['pid']}, uptime: {uptime_str}, mem: {memory_str})")
             elif status == DaemonStatus.STOPPED:
-                output.append(f"○ {app_daemon:30} STOPPED")
+                extra = []
+                if daemon.get('ended_at'):
+                    extra.append(f"ended: {daemon['ended_at']}")
+                if daemon.get('exit_code') is not None:
+                    extra.append(f"exit: {daemon['exit_code']}")
+                suffix = f" ({', '.join(extra)})" if extra else ""
+                output.append(f"○ {app_daemon:30} STOPPED{suffix}")
             elif status == DaemonStatus.CRASHED:
-                output.append(f"✗ {app_daemon:30} CRASHED")
+                extra = []
+                if daemon.get('ended_at'):
+                    extra.append(f"ended: {daemon['ended_at']}")
+                if daemon.get('exit_code') is not None:
+                    extra.append(f"exit: {daemon['exit_code']}")
+                suffix = f" ({', '.join(extra)})" if extra else ""
+                output.append(f"✗ {app_daemon:30} CRASHED{suffix}")
             else:
                 output.append(f"? {app_daemon:30} {status.upper()}")
         
@@ -227,9 +262,9 @@ def daemon_start(app_name: str, daemon_id: str) -> str:
         
         command_template = daemon_configs[app_name][daemon_id]
         
-        # Parse command template
+        # Parse command template and run in app's uv environment
         import shlex
-        command = shlex.split(command_template)
+        base_command = shlex.split(command_template)
         
         # Create daemon and start it
         manager = DaemonManager()
@@ -239,7 +274,8 @@ def daemon_start(app_name: str, daemon_id: str) -> str:
             return f"⚠️ Daemon {app_name}:{daemon_id} is already running"
         
         app_dir = Path("./apps") / app_name
-        success = daemon.start(command, cwd=app_dir)
+        uv_command = ["uv", "run", "--project", f"apps/{app_name}"] + base_command
+        success = daemon.start(uv_command, cwd=app_dir)
         
         if success:
             pid = daemon.get_pid()
@@ -310,6 +346,117 @@ def daemon_logs(app_name: str, daemon_id: str, lines: int = 50) -> str:
     except Exception as e:
         logger.error(f"Failed to get logs for daemon {app_name}:{daemon_id}: {e}")
         return f"❌ Error getting logs: {e}"
+
+
+def daemon_status(app_name: str, daemon_id: str) -> str:
+    """Show status for a specific daemon."""
+    try:
+        manager = DaemonManager()
+        daemon = manager.get_daemon(app_name, daemon_id)
+        st = daemon.get_status()
+        app_daemon = f"{st['app_name']}:{st['daemon_id']}"
+        status = st['status']
+        if status == DaemonStatus.RUNNING:
+            uptime_str = f"{st['uptime']:.1f}s" if st['uptime'] else "unknown"
+            mem = f"{st['memory_mb']:.1f}MB" if st['memory_mb'] else "unknown"
+            return f"{app_daemon} RUNNING (PID {st['pid']}, uptime {uptime_str}, mem {mem})"
+        return f"{app_daemon} {status.upper()}"
+    except Exception as e:
+        logger.error(f"Failed to fetch daemon status {app_name}:{daemon_id}: {e}")
+        return f"❌ Error getting status: {e}"
+
+
+def daemon_restart(app_name: str, daemon_id: str) -> str:
+    """Restart a specific daemon."""
+    try:
+        stop_msg = daemon_stop(app_name, daemon_id)
+        # Ignore not running
+        start_msg = daemon_start(app_name, daemon_id)
+        return f"{stop_msg}\n{start_msg}"
+    except Exception as e:
+        logger.error(f"Failed to restart daemon {app_name}:{daemon_id}: {e}")
+        return f"❌ Error restarting daemon: {e}"
+
+
+def daemon_enable_autostart(app_name: str, daemon_id: str) -> str:
+    """Enable autostart for a daemon."""
+    try:
+        manager = DaemonManager()
+        manager.set_autostart(app_name, daemon_id, True)
+        return f"✅ Enabled autostart for {app_name}:{daemon_id}"
+    except Exception as e:
+        logger.error(f"Failed to enable autostart for {app_name}:{daemon_id}: {e}")
+        return f"❌ Error enabling autostart: {e}"
+
+
+def daemon_disable_autostart(app_name: str, daemon_id: str) -> str:
+    """Disable autostart for a daemon."""
+    try:
+        manager = DaemonManager()
+        manager.set_autostart(app_name, daemon_id, False)
+        return f"✅ Disabled autostart for {app_name}:{daemon_id}"
+    except Exception as e:
+        logger.error(f"Failed to disable autostart for {app_name}:{daemon_id}: {e}")
+        return f"❌ Error disabling autostart: {e}"
+
+
+def daemon_start_enabled() -> str:
+    """Start all daemons marked for autostart."""
+    try:
+        manager = DaemonManager()
+        results = manager.start_enabled_daemons()
+        if not results:
+            return "No enabled daemons to start."
+        ok = [k for k, v in results.items() if v]
+        bad = [k for k, v in results.items() if not v]
+        lines = []
+        if ok:
+            lines.append("Started:")
+            lines.extend([f"✅ {k}" for k in ok])
+        if bad:
+            if lines:
+                lines.append("")
+            lines.append("Failed:")
+            lines.extend([f"❌ {k}" for k in bad])
+        return "\n".join(lines)
+    except Exception as e:
+        logger.error(f"Failed to start enabled daemons: {e}")
+        return f"❌ Error starting enabled daemons: {e}"
+
+
+def daemon_autostart_list() -> str:
+    """List daemons with autostart enabled, and whether running."""
+    try:
+        import sqlite3
+        manager = DaemonManager()
+        # Gather enabled rows from DB
+        enabled = []
+        with sqlite3.connect(manager.profile.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute("SELECT app_name, daemon_id FROM _daemon_startup WHERE enabled = 1 ORDER BY app_name, daemon_id")
+            enabled = [(r['app_name'], r['daemon_id']) for r in cur.fetchall()]
+
+        if not enabled:
+            return "No daemons enabled for autostart."
+
+        # Check configs and running status
+        configs = discover_daemon_configs()
+        lines = ["Autostart-enabled daemons:", "-" * 60]
+        for app_name, daemon_id in enabled:
+            has_config = daemon_id in (configs.get(app_name, {}) or {})
+            daemon = manager.get_daemon(app_name, daemon_id)
+            running = daemon.is_running()
+            flags = []
+            flags.append("running" if running else "stopped")
+            if not has_config:
+                flags.append("missing config")
+            line = f"• {app_name}:{daemon_id} ({', '.join(flags)})"
+            lines.append(line)
+
+        return "\n".join(lines)
+    except Exception as e:
+        logger.error(f"Failed to list autostart daemons: {e}")
+        return f"❌ Error listing autostart daemons: {e}"
 
 
 def daemon_kill_all() -> str:
@@ -487,6 +634,12 @@ def create_clanker_toolset() -> FunctionToolset:
     toolset.add_function(daemon_stop)
     toolset.add_function(daemon_logs)
     toolset.add_function(daemon_kill_all)
+    toolset.add_function(daemon_status)
+    toolset.add_function(daemon_restart)
+    toolset.add_function(daemon_enable_autostart)
+    toolset.add_function(daemon_disable_autostart)
+    toolset.add_function(daemon_start_enabled)
+    toolset.add_function(daemon_autostart_list)
     logger.debug("Added core tools: launch_coding_tool, daemon management")
 
     # Add CLI export tools from apps

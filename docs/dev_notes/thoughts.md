@@ -15,15 +15,6 @@
     - clanker launch claude/cursor/gemini launches, say, a claude code instance with system context explaining clanker
         - `clanker launch claude need to add an app that tells me if the weather is blahblah` adds request as user request to CC. (i think this is possible)
 
-## what i DON'T want:
-
-- clanker apps to have their own 
-    - console tui
-    - cli additions to clanker (unnecessary rn, current functionality)
-    - to be designed to be called by humans directly
-
-the user is free to do whatever but this is not convention.
-
 
 # APP INTEGRATION & CONVENTIONS
 
@@ -74,6 +65,10 @@ the user is free to do whatever but this is not convention.
 
 ## later features / things to consider
 
+- one single sqlite by default is really dumb
+    - instead an app can create a clanker db stored in a profile
+    - because how hard is it to join two sqlite dbs? not hard
+- warming up to in-console slash commands. `tools` -> `/tools`. with a visual autocomplete for slash commands.
 - mcp tool exporting.
     - would be a subset of the tools in clanker, and maybe some that are only mcp? not sure
 - git worktree creation/management for cli tools
@@ -87,11 +82,23 @@ the user is free to do whatever but this is not convention.
 
 - later, what about an extremely simple console ui sdk? prefabs for a couple menu types or dialogs idk
 
+- way later, probably refactor/redesign the console/tools modules
+
+## really rough maybe ideas
+
+- when clanker agent calls a tool, current ux is the output is only seen by the agent and the agent usually relays it back to the user.
+    - always want this? thinking no, for having something like a mini-ui within the console. or just console prints with formatting.
+    - and/or, a verbosity setting that ran show truncated output from the tool call
+- and/or, custom ui widgets that can run in console, built on the fly by clanker through a tool call. like if a user needs to pick from a certain set of things, a menu basically.
+    - simple, not a framework.
+- convention for push notifications to a phone
+
 ## app ideas
 
 - something like a fully automated obsidian vault with basic md publishing utilities. stores in vault, user could i guess point obsidian to that vault dir and use it that way too?
 - user request: flashcard building from obsidian vault, other sources
-- a silly weather app that knows that *exact* weather i like and tells me to go outside.
+- a weather app that knows the *exact* weather i like and tells me to go outside.
+    - later, someday, work on a messaging system
 - the actual recipe app i want:
     - would be agent-based, so clanker calling it would be a "subagent" i guess
     - stored in the vault, similar to obsidian's frontmatter format

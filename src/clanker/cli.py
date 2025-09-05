@@ -70,12 +70,31 @@ def get_agent() -> ClankerAgent:
     return _agent
 
 
+def _bootstrap_startup() -> None:
+    """Initialize required services and autostart enabled daemons."""
+    try:
+        # Ensure DB schema
+        from .storage.schema import ensure_database_initialized
+        ensure_database_initialized()
+    except Exception:
+        pass
+
+    try:
+        # Start enabled daemons (idempotent; skips running ones)
+        from .daemon import DaemonManager
+        DaemonManager().start_enabled_daemons()
+    except Exception:
+        pass
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
     args: List[str] = typer.Argument(None, help="Natural language request or command")
 ):
     """Main clanker command - handles natural language requests and commands."""
+    # Bootstrap shared services and autostart daemons on every CLI entry
+    _bootstrap_startup()
     if ctx.invoked_subcommand is not None:
         # Subcommand was invoked, let it handle
         return
@@ -344,4 +363,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
