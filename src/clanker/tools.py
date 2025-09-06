@@ -25,7 +25,7 @@ def get_tool_display_info(tool_name: str) -> dict:
     description="Start a coding session with any CLI coding tool",
     category="core"
 )
-def launch_coding_tool(tool: str, query: str) -> str:
+def launch_coding_tool(tool: str, query: str = "") -> str:
     """Launch an interactive coding CLI session with Clanker context.
 
     This tool generates appropriate context for the given query and launches
@@ -34,7 +34,7 @@ def launch_coding_tool(tool: str, query: str) -> str:
 
     Args:
         tool: The coding tool to launch (e.g., "claude", "cursor")
-        query: Description of what you want to work on (e.g., "work on the recipe app", "add new features")
+        query: Optional description of what you want to work on (e.g., "work on the recipe app", "add new features")
 
     Returns:
         Status message about the launch
@@ -133,10 +133,6 @@ def launch_coding_tool(tool: str, query: str) -> str:
         logger.error(f"Launch tool error: {e}")
         return error_msg
 
-
-# --------------------------
-# App metadata & discovery
-# --------------------------
 
 def _discover_app_metadata() -> Dict[str, Dict[str, Any]]:
     """Discover apps and their metadata - legacy interface for app_context."""

@@ -116,7 +116,7 @@ def main(
     # Check if first argument is a coding tool
     if args[0].lower() in CODING_TOOLS:
         tool_name = args[0].lower()
-        request = " ".join(args[1:]) if len(args) > 1 else "general development work"
+        request = " ".join(args[1:]) if len(args) > 1 else ""
         handle_coding_tool_command(tool_name, request)
         return
 
@@ -313,7 +313,7 @@ def handle_launch_command(args: List[str]):
         query_parts.append(f"working on {app_name}")
     if user_request:
         query_parts.append(user_request)
-    query = " ".join(query_parts) if query_parts else "general development work"
+    query = " ".join(query_parts) if query_parts else ""
 
     # Use the same launch tool as the agent
     from .tools import launch_coding_tool
