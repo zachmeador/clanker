@@ -49,12 +49,13 @@ uv init && uv add clanker typer
 - **apps.py**: `discover()` apps, `run()` executes them
 - **cli.py**: Typer entry point, routes to apps/agent/system
 - **console.py**: Interactive console with streaming responses
-- **tools.py**: `create_clanker_toolset()` - discovers CLI export tools
+- **tools.py**: `create_clanker_toolset()` - discovers CLI export tools, `launch_coding_tool()`
 - **daemon.py**: `ClankerDaemon`, `DaemonManager` for background processes
 
-#### Storage
-- **vault.py**: `AppVault` - app-isolated file storage
-- **db.py**: `AppDB` - shared SQLite with app-scoped access
+#### Storage & Context
+- **storage/vault.py**: `AppVault` - app-isolated file storage
+- **storage/db.py**: `AppDB` - shared SQLite with app-scoped access
+- **context/**: Context management for external coding tools (templates, hints)
 
 ### Apps (`apps/`)
 Standalone Python packages with:
@@ -66,7 +67,7 @@ Standalone Python packages with:
 
 ### App Usage Pattern
 ```python
-from clanker.models import create_agent, ModelTier
+from clanker import create_agent, ModelTier
 from clanker.storage import AppVault, AppDB
 from clanker.daemon import ClankerDaemon
 
@@ -85,6 +86,7 @@ vault.grant_permission("other-app", "read")  # Cross-app access
 4. **Each app runs in isolated `uv` environment**
 5. **Apps opt-in to integration via `[tool.clanker.exports]`**
 6. **Background tasks use decentralized app-owned daemons**
+7. **Context system supports external coding tools (Claude Code, Cursor)**
 
 ## Daemon System
 
@@ -109,6 +111,10 @@ sync = "python sync_daemon.py"
 - `daemon_disable_autostart(app, daemon_id)` - Disable autostart
 - `daemon_start_enabled()` - Start all enabled daemons
 - `daemon_autostart_list()` - List daemons with autostart enabled
+
+### Additional Core Tools
+- `app_context(app, detail="summary|tools|data|daemons|examples|full", tool=None)` - Return structured metadata and runtime info for an app
+- `launch_coding_tool(tool, query)` - Launch interactive coding sessions (claude, cursor, gemini) with full Clanker context
 
 Auto-start: Any daemons enabled via `daemon_enable_autostart(app, daemon_id)` are started automatically when the `clanker` CLI launches (interactive or command mode). This runs once per CLI invocation and skips daemons already running.
 
