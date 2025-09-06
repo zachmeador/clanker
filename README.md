@@ -53,29 +53,31 @@ The agent can:
 
 Each app runs in its own `uv` environment with automatic tool discovery and daemon management.
 
-## Optional Storage System
+## Storage System
 
-Clanker provides optional storage abstractions in `src/clanker/storage/`:
+Clanker provides optional storage abstractions for app development:
 
 ```python
-from clanker.storage import AppVault, AppDB
+from clanker.storage import Vault, DB
 
-# App-isolated file storage with permissions
-vault = AppVault.for_app("my-app")
-vault.write("config.yaml", {"setting": "value"})
-vault.grant_permission("my-app", "other-app", read=True)
+# App-isolated file storage 
+vault = Vault.for_app("my-app")
+vault.write("config.yml", {"setting": "value"})  # Auto-parses YAML
 
-# Shared SQLite with app-scoped access
-db = AppDB("my-app", db_path)
+# Cross-app permissions
+main_vault = Vault()
+main_vault.grant_permission("requester-app", "my-app", read=True)
+
+# Shared SQLite with app isolation
+db = DB.for_app("my-app")
+db.create_table("items", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
 ```
 
-The storage system provides:
-- **AppVault** - Isolated file storage with cross-app permission controls
-- **AppDB** - Shared SQLite database with app-scoped table access
-- **Automatic isolation** - Apps can only access their own data by default
-- **Permission grants** - Explicit permissions required for cross-app access
-
-Apps can use any storage they want - this is just provided for convenience.
+**Features:**
+- **Vault** - File storage (.yml/.yaml auto-parsed, .md as text, others binary)
+- **DB** - SQLite tables with app-scoped access and permissions
+- **Isolation** - Apps own their data by default, explicit grants for sharing
+- **Profiles** - Multiple environments (default, dev, prod) with separate storage
 
 ## Coding CLI Integration
 
