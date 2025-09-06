@@ -233,12 +233,14 @@ def list_available_models() -> Dict[str, List[str]]:
 
 def create_agent(
     spec: Union[str, ModelTier] = ModelTier.MEDIUM,
+    instructions: Optional[str] = None,
     **agent_kwargs
 ) -> Agent:
     """Convenience function to create a Pydantic AI agent.
     
     Args:
         spec: Model specification (tier or explicit name)
+        instructions: Instructions for the agent (preferred over system_prompt)
         **agent_kwargs: Additional arguments for Agent
         
     Returns:
@@ -246,7 +248,9 @@ def create_agent(
         
     Examples:
         agent = create_agent(ModelTier.LOW)
-        agent = create_agent("anthropic:claude-sonnet-4-0")
+        agent = create_agent("anthropic:claude-sonnet-4-0", instructions="You are a helpful assistant")
     """    
     model = get_model(spec)
+    if instructions:
+        return Agent(model, instructions=instructions, **agent_kwargs)
     return Agent(model, **agent_kwargs)

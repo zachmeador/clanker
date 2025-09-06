@@ -1,89 +1,30 @@
 """Unified tool system for Clanker apps."""
 
 import os
-import subprocess
 import shlex
 from pathlib import Path
-from typing import Dict, List, Callable
-import tomllib
-
-
+from typing import Dict, List, Optional, Any
 from pydantic_ai.toolsets import FunctionToolset
 
 from .logger import get_logger
 from .daemon import DaemonManager, DaemonStatus
+from .profile import Profile
+from .storage.db import DB
+from .tool_registry import get_registry, tool
 
 logger = get_logger("tools")
 
-# Tool display metadata for console
-TOOL_DISPLAY = {
-    "launch_coding_tool": {
-        "name": "Launch Coding Tool",
-        "description": "Start a coding session with any CLI coding tool"
-    },
-    "daemon_list": {
-        "name": "List Daemons",
-        "description": "Show all registered daemons and their status"
-    },
-    "daemon_start": {
-        "name": "Start Daemon",
-        "description": "Start a specific app daemon"
-    },
-    "daemon_stop": {
-        "name": "Stop Daemon", 
-        "description": "Stop a specific app daemon"
-    },
-    "daemon_restart": {
-        "name": "Restart Daemon",
-        "description": "Restart a specific app daemon"
-    },
-    "daemon_logs": {
-        "name": "View Daemon Logs",
-        "description": "View recent log output from a daemon"
-    },
-    "daemon_kill_all": {
-        "name": "Kill All Daemons",
-        "description": "Emergency stop all running daemons"
-    },
-    "daemon_status": {
-        "name": "Daemon Status",
-        "description": "Show status for one daemon"
-    },
-    "daemon_enable_autostart": {
-        "name": "Enable Autostart",
-        "description": "Enable autostart for a daemon"
-    },
-    "daemon_disable_autostart": {
-        "name": "Disable Autostart",
-        "description": "Disable autostart for a daemon"
-    },
-    "daemon_start_enabled": {
-        "name": "Start Enabled Daemons",
-        "description": "Start all daemons marked autostart"
-    },
-    "daemon_autostart_list": {
-        "name": "List Autostart Daemons",
-        "description": "List daemons with autostart enabled"
-    },
-}
 
 def get_tool_display_info(tool_name: str) -> dict:
     """Get display metadata for any tool."""
-    
-    # Check if it's a core tool with custom display
-    if tool_name in TOOL_DISPLAY:
-        return TOOL_DISPLAY[tool_name]
-    
-    # For app tools, just create a readable name from the tool name
-    # Replace underscores with spaces and capitalize appropriately
-    display_name = tool_name.replace("_", " ")
-    
-    return {
-        "name": display_name,
-        "description": f"Run {display_name}"
-    }
+    return get_registry().get_display_info(tool_name)
 
 
+@tool(
+    name="Launch Coding Tool",
+    description="Start a coding session with any CLI coding tool",
+    category="core"
+)
 def launch_coding_tool(tool: str, query: str) -> str:
     """Launch an interactive coding CLI session with Clanker context.
 
@@ -190,6 +131,51 @@ def launch_coding_tool(tool: str, query: str) -> str:
         return error_msg
 
 
+# --------------------------
+# App metadata & discovery
+# --------------------------
+
+def _discover_app_metadata() -> Dict[str, Dict[str, Any]]:
+    """Discover apps and their metadata - legacy interface for app_context."""
+    registry = get_registry()
+    result = {}
+    
+    for app_name in registry.list_apps():
+        manifest = registry.get_app_manifest(app_name)
+        if manifest:
+            result[app_name] = {
+                "summary": manifest.summary,
+                "capabilities": manifest.capabilities,
+                "examples": manifest.examples,
+                "tools": {}
+            }
+            
+            # Convert tool metadata back to legacy format for app_context
+            for export_name, metadata in manifest.tool_metadata.items():
+                result[app_name]["tools"][export_name] = {
+                    "cli": manifest.exports[export_name],
+                    "description": metadata.description,
+                    "params": {name: {
+                        "type": param.type,
+                        "required": param.required,
+                        "default": param.default,
+                        "description": param.description
+                    } for name, param in metadata.parameters.items()},
+                    "flags": {
+                        "side_effects": metadata.side_effects,
+                        "needs_confirmation": metadata.needs_confirmation,
+                        "long_running": metadata.long_running,
+                        "idempotent": metadata.idempotent
+                    }
+                }
+    
+    return result
+
+@tool(
+    name="List Daemons",
+    description="Show all registered daemons and their status",
+    category="daemon"
+)
 def daemon_list() -> str:
     """List all registered daemons with their current status.
     
@@ -239,6 +225,11 @@ def daemon_list() -> str:
         return f"Error listing daemons: {e}"
 
 
+@tool(
+    name="Start Daemon", 
+    description="Start a specific app daemon",
+    category="daemon"
+)
 def daemon_start(app_name: str, daemon_id: str) -> str:
     """Start a specific daemon.
     
@@ -288,6 +279,11 @@ def daemon_start(app_name: str, daemon_id: str) -> str:
         return f"❌ Error starting daemon: {e}"
 
 
+@tool(
+    name="Stop Daemon",
+    description="Stop a specific app daemon", 
+    category="daemon"
+)
 def daemon_stop(app_name: str, daemon_id: str) -> str:
     """Stop a specific daemon.
     
@@ -317,6 +313,11 @@ def daemon_stop(app_name: str, daemon_id: str) -> str:
         return f"❌ Error stopping daemon: {e}"
 
 
+@tool(
+    name="View Daemon Logs",
+    description="View recent log output from a daemon",
+    category="daemon"
+)
 def daemon_logs(app_name: str, daemon_id: str, lines: int = 50) -> str:
     """View recent log output from a daemon.
     
@@ -348,6 +349,11 @@ def daemon_logs(app_name: str, daemon_id: str, lines: int = 50) -> str:
         return f"❌ Error getting logs: {e}"
 
 
+@tool(
+    name="Daemon Status",
+    description="Show status for one daemon",
+    category="daemon"
+)
 def daemon_status(app_name: str, daemon_id: str) -> str:
     """Show status for a specific daemon."""
     try:
@@ -366,6 +372,11 @@ def daemon_status(app_name: str, daemon_id: str) -> str:
         return f"❌ Error getting status: {e}"
 
 
+@tool(
+    name="Restart Daemon",
+    description="Restart a specific app daemon",
+    category="daemon"
+)
 def daemon_restart(app_name: str, daemon_id: str) -> str:
     """Restart a specific daemon."""
     try:
@@ -378,6 +389,11 @@ def daemon_restart(app_name: str, daemon_id: str) -> str:
         return f"❌ Error restarting daemon: {e}"
 
 
+@tool(
+    name="Enable Autostart",
+    description="Enable autostart for a daemon",
+    category="daemon"
+)
 def daemon_enable_autostart(app_name: str, daemon_id: str) -> str:
     """Enable autostart for a daemon."""
     try:
@@ -389,6 +405,11 @@ def daemon_enable_autostart(app_name: str, daemon_id: str) -> str:
         return f"❌ Error enabling autostart: {e}"
 
 
+@tool(
+    name="Disable Autostart",
+    description="Disable autostart for a daemon",
+    category="daemon"
+)
 def daemon_disable_autostart(app_name: str, daemon_id: str) -> str:
     """Disable autostart for a daemon."""
     try:
@@ -400,6 +421,11 @@ def daemon_disable_autostart(app_name: str, daemon_id: str) -> str:
         return f"❌ Error disabling autostart: {e}"
 
 
+@tool(
+    name="Start Enabled Daemons",
+    description="Start all daemons marked autostart",
+    category="daemon"
+)
 def daemon_start_enabled() -> str:
     """Start all daemons marked for autostart."""
     try:
@@ -424,6 +450,11 @@ def daemon_start_enabled() -> str:
         return f"❌ Error starting enabled daemons: {e}"
 
 
+@tool(
+    name="List Autostart Daemons",
+    description="List daemons with autostart enabled",
+    category="daemon"
+)
 def daemon_autostart_list() -> str:
     """List daemons with autostart enabled, and whether running."""
     try:
@@ -459,6 +490,11 @@ def daemon_autostart_list() -> str:
         return f"❌ Error listing autostart daemons: {e}"
 
 
+@tool(
+    name="Kill All Daemons",
+    description="Emergency stop all running daemons",
+    category="daemon"
+)
 def daemon_kill_all() -> str:
     """Emergency stop all running daemons.
     
@@ -498,123 +534,35 @@ def discover_daemon_configs() -> Dict[str, Dict[str, str]]:
     Returns:
         Dict mapping app_name -> {daemon_id: command_template}
     """
-    apps_dir = Path("./apps")
-    if not apps_dir.exists():
-        return {}
-    
+    registry = get_registry()
     configs = {}
     
-    for item in apps_dir.iterdir():
-        if not item.is_dir() or item.name.startswith(('_', '.')):
-            continue
+    for app_name in registry.list_apps():
+        manifest = registry.get_app_manifest(app_name)
+        if manifest and manifest.daemons:
+            configs[app_name] = manifest.daemons
             
-        pyproject_path = item / "pyproject.toml"
-        if not pyproject_path.exists():
-            continue
-        
-        try:
-            with open(pyproject_path, 'rb') as f:
-                pyproject = tomllib.load(f)
-            
-            # Look for daemon configurations
-            daemon_configs = pyproject.get("tool", {}).get("clanker", {}).get("daemons", {})
-            if daemon_configs:
-                configs[item.name] = dict(daemon_configs)
-                logger.debug(f"Found {len(daemon_configs)} daemon configs for {item.name}")
-                
-        except Exception as e:
-            logger.warning(f"Failed to read daemon configs from {item.name}: {e}")
-    
     return configs
 
 
 def discover_cli_exports() -> Dict[str, Dict[str, str]]:
     """
-    Discover CLI exports from all apps in ./apps/.
+    Discover CLI exports from all apps.
 
     Returns:
         Dict mapping app_name -> {export_name: cli_command_template}
     """
-    apps_dir = Path("./apps")
-    if not apps_dir.exists():
-        return {}
-
+    registry = get_registry()
     exports = {}
-
-    for item in apps_dir.iterdir():
-        if not item.is_dir() or item.name.startswith(('_', '.')):
-            continue
-
-        pyproject_path = item / "pyproject.toml"
-        if not pyproject_path.exists():
-            continue
-
-        # Read pyproject.toml
-        try:
-            with open(pyproject_path, 'rb') as f:
-                pyproject = tomllib.load(f)
-
-            # Look for clanker exports
-            clanker_exports = pyproject.get("tool", {}).get("clanker", {}).get("exports", {})
-            if clanker_exports:
-                exports[item.name] = dict(clanker_exports)
-                logger.debug(f"Found {len(clanker_exports)} exports for {item.name}")
-
-        except Exception as e:
-            logger.warning(f"Failed to read exports from {item.name}: {e}")
-
+    
+    for app_name in registry.list_apps():
+        manifest = registry.get_app_manifest(app_name)
+        if manifest and manifest.exports:
+            exports[app_name] = manifest.exports
+            
     return exports
 
 
-def create_tool_function(app_name: str, export_name: str, cli_template: str) -> Callable:
-    """Create a tool function that executes a CLI command."""
-
-    # Extract parameter names from the CLI template
-    import re
-    param_names = re.findall(r'\{(\w+)\}', cli_template)
-
-    def tool_function(**kwargs) -> str:
-        """Execute CLI command as tool."""
-        try:
-            # Provide default values for missing parameters
-            for param in param_names:
-                if param not in kwargs:
-                    if param == 'name':
-                        kwargs[param] = 'World'  # Default name
-                    else:
-                        kwargs[param] = ''  # Empty string for other params
-
-            # Format the CLI command with arguments
-            command = cli_template.format(**kwargs)
-
-            # Execute in app's environment
-            result = subprocess.run(
-                ["uv", "run", "--project", f"apps/{app_name}"] + shlex.split(command),
-                capture_output=True,
-                text=True,
-                cwd=f"./apps/{app_name}",  # Run from app directory
-                timeout=30
-            )
-
-            if result.returncode == 0:
-                return result.stdout.strip()
-            else:
-                error_msg = result.stderr.strip() or f"Command failed with exit code {result.returncode}"
-                return f"Error: {error_msg}"
-
-        except subprocess.TimeoutExpired:
-            return f"Command timed out: {cli_template.format(**kwargs)}"
-        except Exception as e:
-            logger.error(f"Tool execution failed for {app_name}.{export_name}: {e}")
-            return f"Tool execution failed: {str(e)}"
-
-    # Set metadata
-    tool_function.__name__ = f"{app_name}_{export_name}"
-    tool_function.__doc__ = f"Execute {app_name} {export_name} command"
-    tool_function.__app_name__ = app_name
-    tool_function.__export_name__ = export_name
-
-    return tool_function
 
 
 def create_clanker_toolset() -> FunctionToolset:
@@ -624,35 +572,163 @@ def create_clanker_toolset() -> FunctionToolset:
     This creates tools from all apps that have [tool.clanker.exports] in their pyproject.toml,
     plus core Clanker tools like launch_coding_tool.
     """
-    exports = discover_cli_exports()
+    registry = get_registry()
+    
+    # Discover and register all apps
+    registry.discover_apps()
+    
+    # Register core tools
+    core_tools = [
+        launch_coding_tool,
+        daemon_list,
+        daemon_start,
+        daemon_stop,
+        daemon_logs,
+        daemon_kill_all,
+        daemon_status,
+        daemon_restart,
+        daemon_enable_autostart,
+        daemon_disable_autostart,
+        daemon_start_enabled,
+        daemon_autostart_list,
+        app_context
+    ]
+    
+    for tool_func in core_tools:
+        if hasattr(tool_func, '__tool_metadata__'):
+            registry.register(tool_func, tool_func.__tool_metadata__)
+        else:
+            # Fallback for tools without metadata
+            logger.warning(f"Core tool {tool_func.__name__} missing metadata decorator")
+    
+    # Create pydantic toolset from registry
     toolset = FunctionToolset()
-
-    # Add core Clanker tools first
-    toolset.add_function(launch_coding_tool)
-    toolset.add_function(daemon_list)
-    toolset.add_function(daemon_start)
-    toolset.add_function(daemon_stop)
-    toolset.add_function(daemon_logs)
-    toolset.add_function(daemon_kill_all)
-    toolset.add_function(daemon_status)
-    toolset.add_function(daemon_restart)
-    toolset.add_function(daemon_enable_autostart)
-    toolset.add_function(daemon_disable_autostart)
-    toolset.add_function(daemon_start_enabled)
-    toolset.add_function(daemon_autostart_list)
-    logger.debug("Added core tools: launch_coding_tool, daemon management")
-
-    # Add CLI export tools from apps
-    for app_name, app_exports in exports.items():
-        for export_name, cli_template in app_exports.items():
-            tool_func = create_tool_function(app_name, export_name, cli_template)
+    for tool_name in registry.list_tools():
+        tool_func = registry.get_tool(tool_name)
+        if tool_func:
             toolset.add_function(tool_func)
-            logger.debug(f"Created tool: {app_name}_{export_name}")
-
+            logger.debug(f"Added tool: {tool_name}")
+    
     return toolset
 
 
 def list_available_exports() -> Dict[str, List[str]]:
     """List all available CLI exports by app."""
-    exports = discover_cli_exports()
-    return {app_name: list(app_exports.keys()) for app_name, app_exports in exports.items()}
+    registry = get_registry()
+    result = {}
+    
+    for app_name in registry.list_apps():
+        manifest = registry.get_app_manifest(app_name)
+        if manifest and manifest.exports:
+            result[app_name] = list(manifest.exports.keys())
+    
+    return result
+
+
+# --------------------------
+# App context tool
+# --------------------------
+
+@tool(
+    name="App Context",
+    description="Return structured metadata for an app",
+    category="app"
+)
+def app_context(app: str, detail: str = "summary", tool: Optional[str] = None) -> Dict[str, Any]:
+    """Return compact, structured context for an app for LLM use."""
+    detail = (detail or "summary").lower()
+    meta_all = _discover_app_metadata()
+    app_meta = meta_all.get(app, {})
+
+    # Tools
+    tools: List[Dict[str, Any]] = []
+    for name, tmeta in (app_meta.get("tools", {}) or {}).items():
+        if tool and name != tool:
+            continue
+        params_list = []
+        for pname, pspec in (tmeta.get("params", {}) or {}).items():
+            params_list.append({
+                "name": pname,
+                "type": pspec.get("type", "str"),
+                "required": bool(pspec.get("required", True)),
+                "default": pspec.get("default"),
+                "description": pspec.get("description"),
+            })
+        tools.append({
+            "name": name,
+            "description": tmeta.get("description"),
+            "params": params_list,
+            "flags": tmeta.get("flags", {}),
+        })
+
+    # Daemons
+    daemons_info: List[Dict[str, Any]] = []
+    try:
+        cfgs = discover_daemon_configs()
+        if app in cfgs:
+            manager = DaemonManager()
+            listed = { (d['app_name'], d['daemon_id']): d for d in manager.list_daemons() }
+            for did, cmd in cfgs[app].items():
+                status = manager.get_daemon(app, did).get_status()
+                merged = listed.get((app, did), {})
+                daemons_info.append({
+                    "id": did,
+                    "command": cmd,
+                    "status": status.get("status"),
+                    "pid": status.get("pid"),
+                    "uptime": status.get("uptime"),
+                    "last_heartbeat": merged.get("last_heartbeat"),
+                    "ended_at": merged.get("ended_at"),
+                    "exit_code": merged.get("exit_code"),
+                })
+    except Exception:
+        pass
+
+    # Data (db tables and vault roots)
+    data_info: Dict[str, Any] = {}
+    try:
+        profile = Profile.current()
+        db = DB(profile)
+        owned = [row for row in db.list_app_tables() if row.get("app_name") == app]
+        data_info["db_tables"] = [row.get("table_name") for row in owned][:5]
+        vault_root = profile.vault_root / app
+        if vault_root.exists():
+            entries = [p.name for p in vault_root.iterdir() if p.is_dir()][:5]
+        else:
+            entries = []
+        data_info["vault_roots"] = entries
+    except Exception:
+        data_info = {"db_tables": [], "vault_roots": []}
+
+    # Build response
+    base = {
+        "app": app,
+        "summary": app_meta.get("summary"),
+        "capabilities": app_meta.get("capabilities", []),
+    }
+
+    if detail == "summary":
+        top_tools = [t.get("name") for t in tools][:3]
+        base.update({"tools": top_tools})
+        return base
+    if detail == "tools":
+        base.update({"tools": tools})
+        return base
+    if detail == "daemons":
+        base.update({"daemons": daemons_info})
+        return base
+    if detail == "data":
+        base.update({"data": data_info})
+        return base
+    if detail == "examples":
+        base.update({"examples": app_meta.get("examples", [])})
+        return base
+
+    # full
+    base.update({
+        "tools": tools,
+        "daemons": daemons_info,
+        "data": data_info,
+        "examples": app_meta.get("examples", []),
+    })
+    return base

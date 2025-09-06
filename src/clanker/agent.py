@@ -33,7 +33,7 @@ class ClankerAgent:
         ensure_database_initialized()
         logger.debug("Database schema initialized")
         
-        system_prompt = self._get_system_prompt()
+        instructions = self._get_instructions()
 
         # Create toolset with all core tools
         toolset = create_clanker_toolset()
@@ -41,45 +41,67 @@ class ClankerAgent:
 
         self.agent = create_pydantic_agent(
             self.model_tier,
-            system_prompt=system_prompt,
+            instructions=instructions,
             toolsets=[toolset]
         )
-        logger.info("Agent created successfully with toolsets")
-
-    def _get_system_prompt(self) -> str:
-        """Get the system prompt for the agent."""
-        from .context import ContextBuilder, ContextStore, get_available_apps_context
         
-        store = ContextStore()
-        clanker_overview = store.get("clanker_overview") or ""
-        available_apps = get_available_apps_context()
-        cli_patterns = store.get("cli_patterns") or ""
-        export_system = store.get("export_system") or ""
-        personality = store.get("personality") or ""
+        # Add dynamic instructions that refresh each request
+        @self.agent.instructions
+        def add_daemon_status(ctx) -> str:
+            """Current daemon status - refreshed each request."""
+            try:
+                from .daemon import DaemonManager, DaemonStatus
+                manager = DaemonManager()
+                daemons = manager.list_daemons()
+                running = len([d for d in daemons if d['status'] == DaemonStatus.RUNNING])
+                if running > 0:
+                    return f"Current state: {running} daemons running."
+                return "Current state: No daemons running."
+            except Exception:
+                return ""
+        
+        @self.agent.instructions
+        def add_app_hints(ctx) -> str:
+            """App usage hints - refreshed each request."""
+            try:
+                from .context import get_smart_hints
+                return get_smart_hints()
+            except Exception:
+                return ""
+        
+        logger.info("Agent created successfully with toolsets and dynamic instructions")
+
+    def _get_instructions(self) -> str:
+        """Get static instructions for the agent - refreshed each request."""
+        from pathlib import Path
+        
+        # Read snippets directly
+        snippets_dir = Path(__file__).parent / "context" / "snippets"
+        clanker_overview = ""
+        personality = ""
+        
+        try:
+            clanker_overview = (snippets_dir / "clanker_overview.md").read_text()
+        except FileNotFoundError:
+            pass
+            
+        try:
+            personality = (snippets_dir / "personality.md").read_text()
+        except FileNotFoundError:
+            pass
 
         return f"""{clanker_overview}
 
-Your capabilities:
-- Run clanker apps using available tools
-- Help with development tasks
-- Provide contextual information about the system
-
-{available_apps}
-
-{cli_patterns}
-
-{export_system}
-
 CRITICAL INSTRUCTIONS:
 - When users ask to run, launch, execute, or use any app, use the specific app tool
-- Do NOT respond conversationally when a tool should be used
-- Available tools are provided automatically
+- Do NOT respond conversationally when a tool should be used  
+- Tools are auto-discovered by pydantic-ai - focus on using them correctly
+- Use dynamic context hints for current system state
 
 Guidelines:
 - Be helpful and direct
 - Use tools for app-related requests
-- Explain what you're doing after using tools
-- Use the context information above to provide accurate responses
+- Context about daemons and apps is provided dynamically
 
 {personality}"""
 
