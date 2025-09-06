@@ -46,6 +46,7 @@ System Commands:
   clanker system models      - Show available AI models
   clanker system profile     - Manage profiles
   clanker system config      - Configuration settings
+  clanker system build       - Build instruction files from snippets
   clanker system launch      - Launch coding tools with advanced options
   clanker system help        - Show help
   clanker system version     - Show version"""
@@ -172,7 +173,7 @@ def handle_coding_tool_command(tool_name: str, request: str):
 def handle_system_command(args: List[str]):
     """Handle system commands."""
     if not args:
-        typer.echo("System commands: models, profile, config, help, version")
+        typer.echo("System commands: models, profile, config, build, help, version")
         return
     
     subcommand = args[0]
@@ -186,13 +187,15 @@ def handle_system_command(args: List[str]):
         handle_config_command(sub_args)
     elif subcommand == "launch":
         handle_launch_command(sub_args)
+    elif subcommand == "build":
+        handle_rebuild_command(sub_args)
     elif subcommand == "help":
         typer.echo(USAGE_TEXT.format(app_name=APP_NAME))
     elif subcommand == "version":
         typer.echo(f"{APP_NAME} {VERSION}")
     else:
         typer.echo(f"Unknown system command: {subcommand}")
-        typer.echo("Available: models, profile, config, launch, help, version")
+        typer.echo("Available: models, profile, config, build, launch, help, version")
 
 
 def handle_app_command(args: List[str]):
@@ -321,6 +324,33 @@ def handle_launch_command(args: List[str]):
             typer.echo(result, err=True)
     except Exception as e:
         typer.echo(f"Launch failed: {e}", err=True)
+
+
+def handle_rebuild_command(args: List[str]):
+    """Handle rebuild command to regenerate instruction files."""
+    try:
+        from .context import build_all_contexts
+        
+        # Build all contexts without query
+        results = build_all_contexts()
+        
+        # Show results
+        successful = [name for name, success in results.items() if success]
+        failed = [name for name, success in results.items() if not success]
+        
+        if successful:
+            typer.echo(f"✅ Successfully rebuilt: {', '.join(successful)}")
+        
+        if failed:
+            typer.echo(f"❌ Failed to rebuild: {', '.join(failed)}", err=True)
+            raise typer.Exit(1)
+        
+        if not successful and not failed:
+            typer.echo("⚠️ No instruction files to rebuild")
+            
+    except Exception as e:
+        typer.echo(f"❌ Rebuild failed: {e}", err=True)
+        raise typer.Exit(1)
 
 
 def handle_scaffold_command(app_name: str, description: str):

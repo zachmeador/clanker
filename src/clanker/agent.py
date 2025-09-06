@@ -72,38 +72,14 @@ class ClankerAgent:
         logger.info("Agent created successfully with toolsets and dynamic instructions")
 
     def _get_instructions(self) -> str:
-        """Get static instructions for the agent - refreshed each request."""
-        from pathlib import Path
+        """Get static instructions for the agent using unified context system."""
+        from .context import ContextBuilder
         
-        # Read snippets directly
-        snippets_dir = Path(__file__).parent / "context" / "snippets"
-        clanker_overview = ""
-        personality = ""
+        builder = ContextBuilder()
+        builder.add_snippet("clanker_overview")
+        builder.add_snippet("agent_behavior")
         
-        try:
-            clanker_overview = (snippets_dir / "clanker_overview.md").read_text()
-        except FileNotFoundError:
-            pass
-            
-        try:
-            personality = (snippets_dir / "personality.md").read_text()
-        except FileNotFoundError:
-            pass
-
-        return f"""{clanker_overview}
-
-CRITICAL INSTRUCTIONS:
-- When users ask to run, launch, execute, or use any app, use the specific app tool
-- Do NOT respond conversationally when a tool should be used  
-- Tools are auto-discovered by pydantic-ai - focus on using them correctly
-- Use dynamic context hints for current system state
-
-Guidelines:
-- Be helpful and direct
-- Use tools for app-related requests
-- Context about daemons and apps is provided dynamically
-
-{personality}"""
+        return builder.build()
 
     def handle_request(self, request: str) -> dict:
         """Handle a natural language request.

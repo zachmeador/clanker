@@ -46,8 +46,28 @@ your_command = "python main.py your_command {name}"
 
 ### Storage Integration
 ```python
-from clanker.storage import AppVault, AppDB
+from clanker.storage import Vault, DB
 
-vault = AppVault("your_app", vault_root="./data/default/vault", db_path="./data/default/clanker.db")
-db = AppDB("your_app", db_path="./data/default/clanker.db")
+vault = Vault.for_app("your_app")
+db = DB.for_app("your_app")
+
+# Write config
+vault.write("config.yml", {"setting": "value"})
+
+# Create tables
+db.create_table("users", {
+    "id": "INTEGER PRIMARY KEY",
+    "name": "TEXT NOT NULL"
+})
 ```
+
+## Tool Exports
+Make app commands available as AI tools by adding exports to `pyproject.toml`:
+
+```toml
+[tool.clanker.exports]
+hello = "python main.py hello {name}"
+search = "python main.py search --query {query}"
+```
+
+The agent will see these as `your_app_hello(name="Alice")` and `your_app_search(query="pasta")` tools.

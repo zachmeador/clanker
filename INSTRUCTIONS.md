@@ -1,140 +1,199 @@
-# # INSTRUCTIONS
+# Clanker Environment Overview
 
-This file provides guidance to CLI coding tools when working with code in this repository.
+Clanker is a lightweight LLM application framework where each app runs in its own `uv` environment with isolated storage.
 
-## Commands
+## Core Components
+- **Core system**: `src/clanker/` - Agent, CLI, storage, tools
+- **User apps**: `apps/` - Standalone Python packages with dependencies
+- **Isolated storage**: `data/<profile>/vault/<app_name>/` - File storage per app
+- **Shared database**: `data/<profile>/clanker.db` - SQLite with app isolation
 
-```bash
-clanker                          # Launch interactive console
-clanker "your request"           # Natural language request (one-shot)
-clanker app list                 # List available apps
-clanker app run <name> [args]    # Run an app directly
-clanker system models            # Show available AI models
+## Key Features
+- **App isolation**: Each app has own dependencies and storage
+- **Tool exports**: App commands become AI tools via `pyproject.toml` exports
+- **Storage conventions**: Vault for files, DB for tables, with permission system
+- **Daemon management**: Background services defined in app config
+- **Profile system**: Multiple isolated environments (default, dev, etc.)
+
+## Storage Patterns
+- Apps own their vault/database by default
+- Cross-app access requires explicit permissions
+- YAML/Markdown auto-parsed, other files as binary
+- SQLite tables with app-scoped access
+
+# App Structure
+
+Every Clanker app should follow this structure:
+
+```
+apps/your_app/
+├── main.py              # CLI commands with typer
+├── pyproject.toml       # Dependencies + CLI exports
+├── README.md           # Documentation
+└── your_app/           # Package directory
+    ├── __init__.py
+    ├── models.py       # Data models
+    ├── storage.py      # Storage operations
+    └── cli.py          # Command implementations
 ```
 
-## CLI Export System (Core Concept)
+## Key Files
 
-Apps expose CLI commands as AI tools via `pyproject.toml`:
+### main.py - Entry Point
+```python
+import typer
+from your_app.cli import your_command
+
+app = typer.Typer()
+
+@app.command()
+def your_command(name: str):
+    """Your command description."""
+    result = your_command(name)
+    print(result)
+
+if __name__ == "__main__":
+    app()
+```
+
+### pyproject.toml - Configuration
+```toml
+[project]
+name = "your_app"
+version = "0.1.0"
+dependencies = ["clanker", "typer"]
+
+[tool.clanker.exports]
+your_command = "python main.py your_command {name}"
+```
+
+### Storage Integration
+```python
+from clanker.storage import Vault, DB
+
+vault = Vault.for_app("your_app")
+db = DB.for_app("your_app")
+
+# Write config
+vault.write("config.yml", {"setting": "value"})
+
+# Create tables
+db.create_table("users", {
+    "id": "INTEGER PRIMARY KEY",
+    "name": "TEXT NOT NULL"
+})
+```
+
+## Tool Exports
+Make app commands available as AI tools by adding exports to `pyproject.toml`:
 
 ```toml
 [tool.clanker.exports]
 hello = "python main.py hello {name}"
-status = "python main.py status"
-
-[tool.clanker.daemons]
-background_task = "python daemon.py --interval 300"
+search = "python main.py search --query {query}"
 ```
 
-Becomes AI tools:
-- `example_hello(name="Alice")` → `python apps/example/main.py hello Alice`
-- `example_status()` → `python apps/example/main.py status`
-- Daemon tools: `daemon_start("example", "background_task")`
+The agent will see these as `your_app_hello(name="Alice")` and `your_app_search(query="pasta")` tools.
 
-## Quick Start
-```bash
-mkdir apps/myapp && cd apps/myapp
-uv init && uv add clanker typer
-# Create main.py with typer commands
-# Add [tool.clanker.exports] to pyproject.toml
-# Now: clanker "use myapp to do X"
-```
+# Storage Guide
 
-## Architecture
-
-### Core (`src/clanker/`)
-
-#### Primary Modules
-- **agent.py**: `ClankerAgent` with conversation persistence
-- **models.py**: Tiered model selection, `create_agent()` factory
-- **apps.py**: `discover()` apps, `run()` executes them
-- **cli.py**: Typer entry point, routes to apps/agent/system
-- **console.py**: Interactive console with streaming responses
-- **tools.py**: `create_clanker_toolset()` - discovers CLI export tools, `launch_coding_tool()`
-- **daemon.py**: `ClankerDaemon`, `DaemonManager` for background processes
-
-#### Storage & Context
-- **storage/vault.py**: `AppVault` - app-isolated file storage
-- **storage/db.py**: `AppDB` - shared SQLite with app-scoped access
-- **context/**: Context management for external coding tools (templates, hints)
-
-### Apps (`apps/`)
-Standalone Python packages with:
-- Own `pyproject.toml` with deps and `[tool.clanker.exports]`
-- CLI commands in `main.py` with typer
-- Optional background daemons via `[tool.clanker.daemons]`
-- Isolated storage: `data/<profile>/vault/<app_name>/`
-- Cross-app access via permission grants
-
-### App Usage Pattern
+## Vault - File Storage
 ```python
-from clanker import create_agent, ModelTier
-from clanker.storage import AppVault, AppDB
-from clanker.daemon import ClankerDaemon
+from clanker.storage import Vault
 
-agent = create_agent(ModelTier.MEDIUM)
-vault = AppVault("my-app", vault_root, db_path)
-db = AppDB("my-app", db_path)
-daemon = ClankerDaemon("my-app", "background_task")
-vault.grant_permission("other-app", "read")  # Cross-app access
+vault = Vault.for_app("myapp")
+
+# Write files
+vault.write("config.yml", {"setting": "value"})
+vault.write("data.json", my_data)
+
+# Read files
+config = vault.read("config.yml")  # Auto-parses YAML
+data = vault.read("data.json")     # Auto-parses JSON
+
+# List files
+files = vault.list()  # All files in app vault
+files = vault.list("subfolder")  # Files in subfolder
 ```
 
-### Key Design Principles
+## DB - Database Storage
+```python
+from clanker.storage import DB
 
-1. **Build CLI commands, not Python APIs**
-2. **Apps communicate via exports, never direct imports**
-3. **Users interact with Clanker, Clanker orchestrates apps**
-4. **Each app runs in isolated `uv` environment**
-5. **Apps opt-in to integration via `[tool.clanker.exports]`**
-6. **Background tasks use decentralized app-owned daemons**
-7. **Context system supports external coding tools (Claude Code, Cursor)**
+db = DB.for_app("myapp")
 
-## Daemon System
+# Create table
+db.create_table("items", {
+    "id": "INTEGER PRIMARY KEY",
+    "name": "TEXT NOT NULL",
+    "value": "TEXT"
+})
 
-### Daemon Development
-Apps can define background processes that run continuously:
+# Insert data
+db.insert("items", {"name": "test", "value": "data"})
 
-```toml
-[tool.clanker.daemons]
-monitor = "python daemon.py --interval 300"
-sync = "python sync_daemon.py"
+# Query data
+results = db.query("items", {"name": "test"})
 ```
 
-### Daemon Management Tools
+## Cross-App Access
+Apps can access each other's storage with explicit permissions:
+
+```python
+# Grant permission
+vault = Vault()
+vault.grant_permission("requester-app", "target-app", read=True, write=False)
+
+# Access another app's vault
+vault = Vault.for_app("target-app", requester_app="requester-app")
+data = vault.read("shared-config.yml")
+```
+
+## Storage Types
+- **Vault**: Files (.yml/.yaml auto-parsed, .md as text, others as binary)
+- **DB**: SQLite tables with app isolation and permissions
+
+# Current Apps
+
+## example
+- **Location**: `apps/example/`
+- **Description**: Example app demonstrating CLI-based exports
+- **CLI Exports**: hello, status, weather
+- **Commands**: `clanker example_hello`, `clanker example_status`, `clanker example_weather`
+
+## weather_daemon
+- **Location**: `apps/weather_daemon/`
+- **Description**: Example weather monitoring daemon for Clanker
+- **CLI Exports**: weather, status
+- **Commands**: `clanker weather_daemon_weather`, `clanker weather_daemon_status`
+
+## Development
+Create new apps in `apps/` directory with:
+- `main.py` with typer CLI
+- `pyproject.toml` with dependencies and exports
+- Isolated storage via Clanker storage system
+
+# Daemon Management
+
+Available daemon management commands:
 - `daemon_list()` - Show all daemons with status
-- `daemon_start(app, daemon_id)` - Start specific daemon
+- `daemon_start(app, daemon_id)` - Start specific daemon  
 - `daemon_stop(app, daemon_id)` - Stop specific daemon
 - `daemon_logs(app, daemon_id)` - View recent logs
+- `daemon_status(app, daemon_id)` - Check daemon status
+- `daemon_restart(app, daemon_id)` - Restart daemon
 - `daemon_kill_all()` - Emergency stop all daemons
-- `daemon_status(app, daemon_id)` - Show one daemon's status
-- `daemon_restart(app, daemon_id)` - Restart a daemon
 - `daemon_enable_autostart(app, daemon_id)` - Enable autostart
-- `daemon_disable_autostart(app, daemon_id)` - Disable autostart
-- `daemon_start_enabled()` - Start all enabled daemons
-- `daemon_autostart_list()` - List daemons with autostart enabled
+- `daemon_start_enabled()` - Start all autostart-enabled daemons
 
-### Additional Core Tools
-- `app_context(app, detail="summary|tools|data|daemons|examples|full", tool=None)` - Return structured metadata and runtime info for an app
-- `launch_coding_tool(tool, query)` - Launch interactive coding sessions (claude, cursor, gemini) with full Clanker context
-
-Auto-start: Any daemons enabled via `daemon_enable_autostart(app, daemon_id)` are started automatically when the `clanker` CLI launches (interactive or command mode). This runs once per CLI invocation and skips daemons already running.
-
-### Daemon Implementation
-```python
-from clanker.daemon import ClankerDaemon
-import signal
-
-class MyDaemon:
-    def __init__(self):
-        self.running = True
-        signal.signal(signal.SIGTERM, self._shutdown)
-        
-    def _shutdown(self, signum, frame):
-        self.running = False
-        
-    async def run(self):
-        while self.running:
-            # Do work
-            await asyncio.sleep(interval)
+Daemons are defined in app's `pyproject.toml`:
+```toml
+[tool.clanker.daemons]  
+background = "python daemon.py --interval 300"
 ```
 
-Storage: PIDs in `data/<profile>/daemons/`, logs in `data/<profile>/logs/`
+# System Status
+
+example app: Test with 'hello NAME' or 'check status' or 'weather NYC'. Returns formatted greetings, status tables, or mock weather data.
+weather_daemon: Ask 'what's the weather in CITY'. Returns JSON weather data, may cache results.
+System: No daemons running. Use daemon_start to launch background services.

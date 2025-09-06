@@ -1,9 +1,12 @@
 """High-level context templates for common scenarios."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 
+from .builder import ContextBuilder
+from .store import ContextStore
 from .hints import get_smart_hints
+from ..apps import discover as discover_apps
 
 
 
@@ -144,5 +147,96 @@ hello = "python main.py hello {{name}}"
     return "\n\n".join(sections).strip()
 
 
+def build_all_contexts(query: Optional[str] = None) -> Dict[str, bool]:
+    """Generate all instruction files from snippets.
+    
+    Creates INSTRUCTIONS.md and all tool-specific context files from snippets
+    plus dynamic system state.
+    
+    Args:
+        query: Optional user query to include in context
+        
+    Returns:
+        Dict mapping filename -> success status
+    """
+    builder = ContextBuilder()
+    
+    # Build core content from snippets in logical order
+    builder.add_snippet("clanker_overview")
+    builder.add_snippet("export_system") 
+    builder.add_snippet("cli_patterns")
+    builder.add_snippet("app_structure")
+    builder.add_snippet("storage_guide")
+    
+    # Add dynamic content - current apps and state
+    apps_context = get_available_apps_context()
+    if apps_context and apps_context != "No apps found in apps/ directory.":
+        builder.add(apps_context, "Current Apps")
+    
+    # Add daemon tools section
+    daemon_context = _get_daemon_tools_context()
+    if daemon_context:
+        builder.add(daemon_context, "Daemon Management")
+    
+    # Add smart hints about current system state
+    hints = get_smart_hints()
+    if hints and hints != "No app-specific context available.":
+        builder.add(hints, "System Status")
+    
+    # Add user query if provided
+    if query:
+        builder.add(f"**Current Request**: {query}", "User Query")
+    
+    # Build final content and write to all files
+    content = builder.build()
+    store = ContextStore()
+    return store.write_all(content)
 
 
+def get_available_apps_context() -> str:
+    """Discover apps via clanker.apps.discover and format a context section."""
+    discovered = discover_apps()
+    if not discovered:
+        return "No apps found in apps/ directory."
+
+    lines = []
+    for app_name, info in discovered.items():
+        description = info.get("description") or f"{app_name} app"
+        exports = info.get("exports") or []
+
+        lines.append(f"## {app_name}")
+        lines.append(f"- **Location**: `apps/{app_name}/`")
+        lines.append(f"- **Description**: {description}")
+        if exports:
+            lines.append(f"- **CLI Exports**: {', '.join(exports)}")
+            commands = [f"`clanker {app_name}_{export}`" for export in exports]
+            lines.append(f"- **Commands**: {', '.join(commands)}")
+        lines.append("")
+
+    lines.append("## Development")
+    lines.append("Create new apps in `apps/` directory with:")
+    lines.append("- `main.py` with typer CLI")
+    lines.append("- `pyproject.toml` with dependencies and exports")
+    lines.append("- Isolated storage via Clanker storage system")
+
+    return "\n".join(lines)
+
+
+def _get_daemon_tools_context() -> str:
+    """Get brief context about daemon management tools."""
+    return """Available daemon management commands:
+- `daemon_list()` - Show all daemons with status
+- `daemon_start(app, daemon_id)` - Start specific daemon  
+- `daemon_stop(app, daemon_id)` - Stop specific daemon
+- `daemon_logs(app, daemon_id)` - View recent logs
+- `daemon_status(app, daemon_id)` - Check daemon status
+- `daemon_restart(app, daemon_id)` - Restart daemon
+- `daemon_kill_all()` - Emergency stop all daemons
+- `daemon_enable_autostart(app, daemon_id)` - Enable autostart
+- `daemon_start_enabled()` - Start all autostart-enabled daemons
+
+Daemons are defined in app's `pyproject.toml`:
+```toml
+[tool.clanker.daemons]  
+background = "python daemon.py --interval 300"
+```"""

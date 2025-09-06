@@ -55,23 +55,26 @@ def launch_coding_tool(tool: str, query: str) -> str:
         
         cli_command = tool_commands[tool_lower]
 
-        # Generate context using coding_session_context
+        # Generate context for all tools using unified system
         try:
-            from .context import coding_session_context
-            full_context = coding_session_context(tool, query)
+            from .context import build_all_contexts
+            results = build_all_contexts(query)
             
-            # Use tool-specific filename for each tool
-            context_files = {
-                "claude": "CLAUDE.md",
-                "gemini": "GEMINI.md",
-                "cursor": "CLANKER_CONTEXT.md",
-            }
-            context_file = context_files.get(tool_lower, "CLANKER_CONTEXT.md")
+            # Log which files were successfully generated
+            successful_files = [name for name, success in results.items() if success]
+            if successful_files:
+                logger.info(f"Generated context files: {', '.join(successful_files)}")
+            else:
+                logger.warning("No context files were successfully generated")
             
-            # Write context file for reference
-            with open(context_file, "w") as f:
-                f.write(full_context)
-            logger.info(f"Generated {context_file} with Clanker session context for {tool}")
+            # For the CLI launch, we'll read the content from INSTRUCTIONS.md  
+            # since that's our master file now
+            try:
+                with open("INSTRUCTIONS.md", "r") as f:
+                    full_context = f.read()
+            except FileNotFoundError:
+                # Fallback to basic context if INSTRUCTIONS.md doesn't exist
+                full_context = "# Clanker Development Session\n\nWorking with Clanker codebase."
             
             # Build the full query with context included
             context_query = f"{full_context}\n\n---\n\n**User Request**: {query}" if query else full_context
