@@ -6,7 +6,7 @@ from contextlib import contextmanager
 
 
 class AppDB:
-    """Database context for a specific app."""
+    """Database context for a specific app with isolated storage."""
     
     def __init__(self, app_name: str, db_path: Path):
         self.app_name = app_name
@@ -35,33 +35,9 @@ class AppDB:
         finally:
             conn.close()
     
-    def _check_permission(self, table: str, operation: str) -> bool:
-        """Check if this app has permission for the operation on the table."""
-        with self._connection() as conn:
-            # Build query based on operation type
-            if operation == "read":
-                query = """
-                    SELECT 1 FROM _permissions 
-                    WHERE app_name = ? AND table_name = ? AND read = 1
-                """
-            else:  # write
-                query = """
-                    SELECT 1 FROM _permissions 
-                    WHERE app_name = ? AND table_name = ? AND write = 1
-                """
-            
-            cursor = conn.execute(query, (self.app_name, table))
-            if cursor.fetchone():
-                return True
-            
-            cursor = conn.execute(
-                "SELECT 1 FROM _app_tables WHERE app_name = ? AND table_name = ?",
-                (self.app_name, table)
-            )
-            return cursor.fetchone() is not None
     
     def create_table(self, table_name: str, schema: Dict[str, str]) -> None:
-        """Create a table owned by this app."""
+        """Create a table in the app's database."""
         if not schema:
             raise ValueError("Schema cannot be empty")
         
@@ -75,18 +51,11 @@ class AppDB:
         
         with self._connection() as conn:
             conn.execute(f"CREATE TABLE IF NOT EXISTS {table_name} ({', '.join(columns)})")
-            conn.execute(
-                "INSERT OR IGNORE INTO _app_tables (app_name, table_name) VALUES (?, ?)",
-                (self.app_name, table_name)
-            )
             conn.commit()
     
     def insert(self, table: str, data: Dict[str, Any]) -> int:
         """Insert a row into a table."""
         self._validate_identifier(table, "table name")
-        
-        if not self._check_permission(table, "write"):
-            raise PermissionError(f"App '{self.app_name}' cannot write to table '{table}'")
         
         columns = list(data.keys())
         for col in columns:
@@ -106,9 +75,6 @@ class AppDB:
         """Query rows from a table."""
         self._validate_identifier(table, "table name")
         
-        if not self._check_permission(table, "read"):
-            raise PermissionError(f"App '{self.app_name}' cannot read from table '{table}'")
-        
         query = f"SELECT * FROM {table}"
         params = []
         
@@ -126,9 +92,6 @@ class AppDB:
     def update(self, table: str, data: Dict[str, Any], conditions: Dict[str, Any]) -> int:
         """Update rows in a table."""
         self._validate_identifier(table, "table name")
-        
-        if not self._check_permission(table, "write"):
-            raise PermissionError(f"App '{self.app_name}' cannot write to table '{table}'")
         
         if not data or not conditions:
             raise ValueError("Both data and conditions must be provided")
@@ -153,9 +116,6 @@ class AppDB:
         """Delete rows from a table."""
         self._validate_identifier(table, "table name")
         
-        if not self._check_permission(table, "write"):
-            raise PermissionError(f"App '{self.app_name}' cannot write to table '{table}'")
-        
         if not conditions:
             raise ValueError("Conditions must be provided for delete operations")
         
@@ -171,23 +131,12 @@ class AppDB:
             return cursor.rowcount
     
     def tables(self) -> List[str]:
-        """List all tables this app can access."""
+        """List all tables in the app's database."""
         with self._connection() as conn:
-            owned = conn.execute(
-                "SELECT table_name FROM _app_tables WHERE app_name = ?",
-                (self.app_name,)
-            ).fetchall()
-            
-            permitted = conn.execute(
-                "SELECT table_name FROM _permissions WHERE app_name = ? AND read = 1",
-                (self.app_name,)
-            ).fetchall()
-            
-            tables = set()
-            for row in owned + permitted:
-                tables.add(row[0])
-            
-            return sorted(tables)
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            )
+            return sorted([row[0] for row in cursor.fetchall()])
 
 
 class DB:
@@ -205,46 +154,8 @@ class DB:
     
     @classmethod
     def for_app(cls, app_name: str, profile: Optional['Profile'] = None) -> AppDB:
-        """Get a database context for a specific app."""
+        """Get a database context for a specific app with isolated storage."""
         db = cls(profile)
-        return AppDB(app_name, db.db_path)
+        app_db_path = db.profile.app_db_path(app_name)
+        return AppDB(app_name, app_db_path)
     
-    def grant_permission(self, app_name: str, table_name: str, read: bool = False, write: bool = False) -> None:
-        """Grant permissions to an app for a table (for use by DB agent)."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                INSERT OR REPLACE INTO _permissions (app_name, table_name, read, write)
-                VALUES (?, ?, ?, ?)
-            """, (app_name, table_name, int(read), int(write)))
-            conn.commit()
-    
-    def revoke_permission(self, app_name: str, table_name: str) -> None:
-        """Revoke all permissions from an app for a table (for use by DB agent)."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                "DELETE FROM _permissions WHERE app_name = ? AND table_name = ?",
-                (app_name, table_name)
-            )
-            conn.commit()
-    
-    def list_permissions(self) -> List[Dict[str, Any]]:
-        """List all permissions (for use by DB agent)."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.execute("""
-                SELECT app_name, table_name, read, write, granted_by, granted_at
-                FROM _permissions
-                ORDER BY app_name, table_name
-            """)
-            return [dict(row) for row in cursor.fetchall()]
-    
-    def list_app_tables(self) -> List[Dict[str, Any]]:
-        """List all app-owned tables (for use by DB agent)."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.execute("""
-                SELECT app_name, table_name, created_at
-                FROM _app_tables
-                ORDER BY app_name, table_name
-            """)
-            return [dict(row) for row in cursor.fetchall()]

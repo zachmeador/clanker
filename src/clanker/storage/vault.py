@@ -29,7 +29,7 @@ class AppVault:
         self.app_root = vault_root / app_name
         self.db_path = db_path
         # Known text types receive intelligent handling; all other types are treated as opaque blobs.
-        self._text_extensions = {'.yml', '.yaml', '.md'}
+        self._text_extensions = {'.yml', '.yaml', '.md', '.json'}
         
         # Identify requester for permission checks
         env_requester = os.getenv("CLANKER_REQUESTER_APP")
@@ -101,6 +101,7 @@ class AppVault:
         """Write content to a file in the vault.
 
         - .yml/.yaml: accepts dict/list (serialized) or str (validated YAML)
+        - .json: accepts dict/list (serialized) or str (validated JSON)
         - .md: accepts str only
         - others: accepts bytes only (blob storage)
         """
@@ -130,6 +131,18 @@ class AppVault:
                     raise ValueError(f"Invalid YAML content: {e}")
             else:
                 output = yaml.dump(content, default_flow_style=False, sort_keys=False)
+        elif full_path.suffix == '.json':
+            if isinstance(content, str):
+                # If string provided for JSON file, try to parse it first to validate
+                try:
+                    import json
+                    json.loads(content)
+                    output = content
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Invalid JSON content: {e}")
+            else:
+                import json
+                output = json.dumps(content, indent=2)
         else:  # .md
             if not isinstance(content, str):
                 raise ValueError("Markdown files must contain string content")
@@ -140,8 +153,8 @@ class AppVault:
     def read(self, path: str) -> Union[str, Dict, List, bytes]:
         """Read content from a file in the vault.
 
-        Returns bytes for unknown file types; returns parsed YAML for .yml/.yaml and
-        a string for .md files.
+        Returns bytes for unknown file types; returns parsed YAML for .yml/.yaml,
+        parsed JSON for .json, and a string for .md files.
         """
         full_path = self._validate_path(path)
         # Cross-app permission check (read)
@@ -163,6 +176,12 @@ class AppVault:
                 return yaml.safe_load(content)
             except yaml.YAMLError as e:
                 raise ValueError(f"Invalid YAML in {path}: {e}")
+        elif full_path.suffix == '.json':
+            try:
+                import json
+                return json.loads(content)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in {path}: {e}")
         else:  # .md
             return content
     

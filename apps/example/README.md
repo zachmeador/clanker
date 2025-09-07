@@ -1,77 +1,128 @@
-# Example App - Export-Based Integration
+# Example Journal App
 
-This is a simple example app demonstrating the new export-based integration with Clanker.
+A personal journal application demonstrating all major Clanker features:
+- **Vault storage** for markdown journal entries 
+- **Database storage** for entry metadata and search indexing
+- **Daemon service** for background daily summarization
+- **CLI exports** making all commands available as AI tools
 
 ## Features
 
-- **CLI Commands**: `hello` and `test` commands available through Clanker CLI
-- **Agent Tools**: Additional functions available as agent tools
-- **Export-Based**: Uses the new `@export` decorator system instead of typer CLI
+### Core Commands
+- `add` - Add new journal entries with hashtag support
+- `list` - Display recent entries with rich formatting
+- `search` - Search entries by content, tags, or summary
+- `stats` - Show comprehensive journal statistics  
+- `backup` - Export all entries to timestamped JSON
 
-## Exported Functions
+### Background Daemon
+The `summarizer` daemon runs daily to:
+- Generate summaries of previous day's entries
+- Extract and catalog hashtags used
+- Store summaries in the vault as markdown files
+- Track daemon status and health
 
-### CLI Commands (Available via `clanker example <command>`)
+## Storage Architecture
 
-- `hello [name]` - Greet a user and show available AI providers
-- `test` - Run a simple test
+### Vault Usage
+```
+vault/
+├── entries/
+│   ├── {uuid}.md       # Individual journal entries with YAML frontmatter
+├── summaries/
+│   ├── daily_summary_2024-01-15.md  # Generated daily summaries
+└── backups/
+    ├── journal_backup_20240115_143022.json  # JSON backup files
+```
 
-### Agent Tools (Available to Clanker agents)
-
-- `greet_user(name)` - Say hello with provider information
-- `run_test()` - Verify app functionality
-- `get_system_info()` - Get system and provider information
-- `validate_name(name)` - Validate if a name is acceptable
-- `create_greeting(name, style)` - Create styled greetings
+### Database Schema
+```sql
+CREATE TABLE entries (
+    entry_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    word_count INTEGER NOT NULL,
+    tags TEXT,              -- Comma-separated hashtags
+    summary TEXT            -- First 100 characters
+);
+```
 
 ## Usage Examples
 
+### Adding Entries
 ```bash
-# CLI usage through Clanker
-clanker example hello "Alice"
-clanker example test
+# Add a simple entry
+python main.py add "Had a great day at work today!"
 
-# Agent usage (through Clanker console or API)
-# Agents can call functions like greet_user(), get_system_info(), etc.
+# Add entry with hashtags for categorization
+python main.py add "Finished the big project! #work #achievement #deadline"
+
+# Multi-line entries work too
+python main.py add "Went for a long hike today.
+
+The weather was perfect and the views were amazing. 
+Definitely need to do this more often. #hiking #nature #wellness"
 ```
 
-## Migration from Typer
+### Viewing and Searching
+```bash
+# Show recent entries
+python main.py list --count 3
 
-This app was previously built with typer CLI commands. The new export-based approach:
+# Search by hashtag
+python main.py search "#work"
 
-- ✅ Removes dependency on typer
-- ✅ Allows selective exposure (CLI only, tool only, or both)
-- ✅ Provides better agent integration with rich typing
-- ✅ Enables self-documenting interfaces
-- ✅ Supports both synchronous and asynchronous functions
+# Search by content
+python main.py search "hiking"
 
-## Development
-
-The app structure is now:
-
-```
-example/
-├── example/
-│   ├── __init__.py     # Registers exports with Clanker
-│   └── exports.py      # Contains all exported functions
-├── main.py             # Simple entry point (backwards compatibility)
-├── pyproject.toml      # Updated dependencies (removed typer)
-└── README.md          # This file
+# View statistics
+python main.py stats
 ```
 
-## Export Declaration
-
-Functions are exported using decorators:
-
-```python
-@export(
-    name="function_name",
-    description="What this function does",
-    export_type=ExportType.BOTH,  # CLI, TOOL, or BOTH
-    cli_path="command"             # Optional CLI command name
-)
-def my_function(param: str) -> str:
-    # Implementation here
-    pass
+### Backup and Export
+```bash
+# Create backup file
+python main.py backup
+# Creates: journal_backup_20240115_143022.json
 ```
 
-This approach makes apps loosely coupled with Clanker while enabling deep integration when desired.
+## Daemon Management
+
+Start the background summarizer:
+```bash
+# Through clanker daemon system
+clanker daemon_start example summarizer
+
+# Or directly (for testing)
+python daemon.py --once
+```
+
+The daemon will:
+1. Run every 24 hours (configurable)
+2. Find entries from the previous day
+3. Generate markdown summaries with statistics
+4. Extract and categorize all hashtags used
+5. Store results in vault under `summaries/`
+
+## AI Tool Integration
+
+When exported through Clanker, all commands become available as AI tools:
+
+- `example_add(entry="...")` - Add journal entries via AI
+- `example_search(query="...")` - AI can search your journal
+- `example_stats()` - AI can get statistics about your writing
+- `example_list(count=5)` - AI can show recent entries
+- `example_backup()` - AI can trigger backups
+
+## Technical Implementation
+
+This app demonstrates:
+
+1. **Dual Storage Pattern**: Vault for content, DB for metadata
+2. **YAML Frontmatter**: Structured metadata in markdown files  
+3. **Database Indexing**: Fast search through metadata fields
+4. **Background Processing**: Daemon for automated tasks
+5. **Rich CLI**: Professional command-line interface
+6. **Error Handling**: Graceful failure modes
+7. **Data Export**: JSON backup format for portability
+
+The implementation shows how to build a full-featured app using Clanker's storage abstractions while maintaining data portability and search performance.

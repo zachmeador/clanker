@@ -68,15 +68,15 @@ vault.write("config.yml", {"setting": "value"})  # Auto-parses YAML
 main_vault = Vault()
 main_vault.grant_permission("requester-app", "my-app", read=True)
 
-# Shared SQLite with app isolation
-db = DB.for_app("my-app")
+# Isolated SQLite per app
+db = DB.for_app("my-app")  # data/default/apps/my-app/db.sqlite
 db.create_table("items", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
 ```
 
 **Features:**
 - **Vault** - File storage (.yml/.yaml auto-parsed, .md as text, others binary)
-- **DB** - SQLite tables with app-scoped access and permissions
-- **Isolation** - Apps own their data by default, explicit grants for sharing
+- **DB** - Isolated SQLite database per app (complete isolation)
+- **Isolation** - Apps own their data by default, vault sharing via explicit grants
 - **Profiles** - Multiple environments (default, dev, prod) with separate storage
 
 ## Coding CLI Integration

@@ -11,7 +11,11 @@ logger = get_logger("schema")
 
 
 class DatabaseSchema:
-    """Manages the complete Clanker database schema."""
+    """Manages the core Clanker system database schema.
+    
+    Note: Apps now use isolated per-app databases. This schema only
+    manages core system tables for vault permissions and daemon tracking.
+    """
     
     def __init__(self, profile: Optional[Profile] = None):
         """Initialize schema manager.
@@ -39,28 +43,6 @@ class DatabaseSchema:
                 )
             """)
             
-            # App table ownership (from storage/db.py)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS _app_tables (
-                    app_name TEXT NOT NULL,
-                    table_name TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (app_name, table_name)
-                )
-            """)
-            
-            # Cross-app table permissions (from storage/db.py)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS _permissions (
-                    app_name TEXT NOT NULL,
-                    table_name TEXT NOT NULL,
-                    read INTEGER DEFAULT 0,
-                    write INTEGER DEFAULT 0,
-                    granted_by TEXT DEFAULT 'user',
-                    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (app_name, table_name)
-                )
-            """)
             
             # Cross-app vault file permissions (from storage/vault.py)
             conn.execute("""

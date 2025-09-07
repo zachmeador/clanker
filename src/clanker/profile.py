@@ -105,6 +105,19 @@ class Profile:
         """
         return self.logs_dir / f"{app_name}.log"
     
+    def app_db_path(self, app_name: str) -> Path:
+        """Get path for app-specific database.
+        
+        Args:
+            app_name: Name of the app.
+            
+        Returns:
+            Path to app's SQLite database file.
+        """
+        app_data_dir = self._data_root / "apps" / app_name
+        app_data_dir.mkdir(parents=True, exist_ok=True)
+        return app_data_dir / "db.sqlite"
+    
     @classmethod
     def current(cls) -> "Profile":
         """Get the current active profile.

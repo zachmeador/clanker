@@ -23,9 +23,9 @@ files = vault.list("subfolder")  # Files in subfolder
 ```python
 from clanker.storage import DB
 
-db = DB.for_app("myapp")
+db = DB.for_app("myapp")  # Isolated database per app
 
-# Create table
+# Create table (in app's isolated database)
 db.create_table("items", {
     "id": "INTEGER PRIMARY KEY",
     "name": "TEXT NOT NULL",
@@ -40,18 +40,24 @@ results = db.query("items", {"name": "test"})
 ```
 
 ## Cross-App Access
-Apps can access each other's storage with explicit permissions:
+Apps have isolated storage by default:
+
+- **Vault**: Cross-app access with explicit permissions
+- **Database**: Each app has its own isolated SQLite database
 
 ```python
-# Grant permission
+# Vault cross-app access (with permissions)
 vault = Vault()
 vault.grant_permission("requester-app", "target-app", read=True, write=False)
 
 # Access another app's vault
 vault = Vault.for_app("target-app", requester_app="requester-app")
 data = vault.read("shared-config.yml")
+
+# Database isolation - no cross-app access
+db = DB.for_app("myapp")  # Uses data/default/apps/myapp/db.sqlite
 ```
 
 ## Storage Types
 - **Vault**: Files (.yml/.yaml auto-parsed, .md as text, others as binary)
-- **DB**: SQLite tables with app isolation and permissions
+- **DB**: Isolated SQLite database per app at `data/<profile>/apps/<app>/db.sqlite`

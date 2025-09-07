@@ -1,7 +1,7 @@
 [project]
 name = "example"
 version = "0.1.0"
-description = "Example app demonstrating CLI-based exports"
+description = "Personal journal app demonstrating all Clanker features"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -13,7 +13,63 @@ dependencies = [
 [tool.uv.sources]
 clanker = { path = "../../", editable = true }
 
-# Clanker export declarations
+# Clanker configuration
+[tool.clanker.app]
+summary = "Personal journal app demonstrating Vault, DB, and daemon features"
+capabilities = ["journal", "storage", "search", "backup", "daemon"]
+examples = [
+  "add 'Had a great day today! #happy #work': add a new journal entry",
+  "list --count 3: show recent entries", 
+  "search happy: search entries containing 'happy'",
+  "stats: show journal statistics",
+  "backup: export all entries to JSON"
+]
+
+# CLI exports - what commands are available as tools
 [tool.clanker.exports]
-hello = "python main.py hello {name}"
-status = "python main.py status"
+add = "python main.py add {entry}"
+list = "python main.py list --count {count}"
+search = "python main.py search {query}"
+stats = "python main.py stats"
+backup = "python main.py backup"
+
+# Daemon configuration
+[tool.clanker.daemons]
+summarizer = "python daemon.py --interval 86400"
+
+# Tool metadata
+[tool.clanker.tools.add]
+description = "Add a new journal entry with automatic metadata extraction"
+side_effects = ["creates_files", "modifies_database"]
+
+[tool.clanker.tools.add.params.entry]
+type = "str"
+required = true
+description = "The journal entry text. Use #hashtags to add tags."
+
+[tool.clanker.tools.list]
+description = "Show recent journal entries in a formatted display"
+idempotent = true
+
+[tool.clanker.tools.list.params.count]
+type = "int"
+required = false
+default = 5
+description = "Number of recent entries to show"
+
+[tool.clanker.tools.search]
+description = "Search journal entries by content, tags, or summary"
+idempotent = true
+
+[tool.clanker.tools.search.params.query]
+type = "str"
+required = true
+description = "Search term to look for in entries"
+
+[tool.clanker.tools.stats]
+description = "Show comprehensive journal statistics"
+idempotent = true
+
+[tool.clanker.tools.backup]
+description = "Export all journal entries to a timestamped JSON file"
+side_effects = ["creates_files"]
