@@ -14,6 +14,7 @@ Clanker is a lightweight LLM application framework where each app runs in its ow
 - **Storage conventions**: Vault for files, DB for tables, with permission system
 - **Daemon management**: Background services defined in app config
 - **Profile system**: Multiple isolated environments (default, dev, etc.)
+- **Context generation**: Dynamic instruction files built from snippets + live state
 
 ## Storage Patterns
 - Apps own their vault/database by default

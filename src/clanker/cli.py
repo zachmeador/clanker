@@ -3,13 +3,11 @@
 import asyncio
 import typer
 from pathlib import Path
-from typing import Optional, List
-from dataclasses import dataclass
+from typing import Optional, List, Annotated
 
 from . import apps as apps_module
 from .models import list_available_providers, list_available_models
 from .agent import ClankerAgent
-from .input_resolution import InputResolver
 from .models import ModelTier
 from .logger import get_logger
 
@@ -19,47 +17,33 @@ logger = get_logger("cli")
 VERSION = "0.1.0"
 APP_NAME = "Clanker"
 
-app = typer.Typer(help=f"{APP_NAME} - LLM app environment")
+# Main app
+app = typer.Typer(
+    help=f"{APP_NAME} - LLM app environment",
+    epilog="Examples: clanker app list | clanker system version | clanker claude \"help\" | clanker \"create todo app\"",
+    context_settings={"help_option_names": ["-h", "--help"]}
+)
 
-# Help text
-USAGE_TEXT = """{app_name} - LLM app environment
+# Subcommand groups with automatic help display
+app_group = typer.Typer(
+    help="App management commands",
+    invoke_without_command=True,
+    no_args_is_help=True
+)
+system_group = typer.Typer(
+    help="System management commands",
+    invoke_without_command=True,
+    no_args_is_help=True
+)
 
-Usage:
-  clanker                    - Launch interactive console
-  clanker [request]          - Natural language request (one-shot)
-  clanker <tool> [request]   - Launch coding tool directly (claude, cursor, gemini)
-  clanker app <command>      - App management
-  clanker system <command>   - System management
-
-Coding Tools:
-  clanker claude [request]   - Launch Claude Code with context
-  clanker cursor [request]   - Launch Cursor-agent with context  
-  clanker gemini [request]   - Launch Gemini CLI with context
-
-App Commands:
-  clanker app list           - List available apps
-  clanker app run <name>     - Run an app
-  clanker app info <name>    - Show app details
-  clanker app scaffold       - Create new app with guidance
-
-System Commands:
-  clanker system models      - Show available AI models
-  clanker system profile     - Manage profiles
-  clanker system config      - Configuration settings
-  clanker system build       - Build instruction files from snippets
-  clanker system launch      - Launch coding tools with advanced options
-  clanker system help        - Show help
-  clanker system version     - Show version"""
-
-HELP_MESSAGE = "Use 'clanker system help' for help"
-
+app.add_typer(app_group, name="app")
+app.add_typer(system_group, name="system")
 
 # Supported coding tools
 CODING_TOOLS = {"claude", "cursor", "gemini"}
 
 # Simple module-level instances - lazy initialized
 _agent: Optional[ClankerAgent] = None
-_resolver = InputResolver()
 
 def get_agent() -> ClankerAgent:
     """Get or create the agent instance."""
@@ -88,77 +72,56 @@ def _bootstrap_startup() -> None:
         pass
 
 
-@app.callback(invoke_without_command=True)
-def main(
-    ctx: typer.Context,
-    args: List[str] = typer.Argument(None, help="Natural language request or command")
-):
-    """Main clanker command - handles natural language requests and commands."""
+@app.callback()
+def main(ctx: typer.Context):
+    """Main entry point. Supports structured commands and natural language requests."""
     # Bootstrap shared services and autostart daemons on every CLI entry
     _bootstrap_startup()
-    if ctx.invoked_subcommand is not None:
-        # Subcommand was invoked, let it handle
-        return
 
-    if not args:
-        # No args provided, launch interactive console
-        try:
-            from .console import InteractiveConsole
-            console = InteractiveConsole()
-            asyncio.run(console.run())
-        except KeyboardInterrupt:
-            typer.echo("\nExiting...")
-        except Exception as e:
-            typer.echo(f"Error launching console: {e}", err=True)
-            raise typer.Exit(1)
-        return
 
-    # Check if first argument is a coding tool
-    if args[0].lower() in CODING_TOOLS:
-        tool_name = args[0].lower()
-        request = " ".join(args[1:]) if len(args) > 1 else ""
-        handle_coding_tool_command(tool_name, request)
-        return
-
-    # Resolve input type for other commands
-    resolution = _resolver.resolve(args)
-
-    if resolution["type"] == "system_command":
-        # Handle system or app commands
-        command = resolution["command"]
-        if command == "system":
-            handle_system_command(resolution["args"])
-        elif command == "app":
-            handle_app_command(resolution["args"])
-        else:
-            typer.echo(f"Unknown command: {command}")
-            raise typer.Exit(1)
-
-    elif resolution["type"] == "natural_language":
-        # Handle as natural language request (one-shot)
-        logger.info(f"Natural language request: '{resolution['request']}'")
-        try:
-            logger.debug("Getting agent instance")
-            agent = get_agent()
-            logger.debug("Calling agent.handle_request()")
-            result = agent.handle_request(resolution["request"])
-            logger.debug(f"Agent returned result: '{result['response'][:100]}...'")
-            typer.echo(result['response'])
-        except Exception as e:
-            logger.error(f"CLI natural language handling failed: {str(e)}", exc_info=True)
-            typer.echo(f"Error: {e}", err=True)
-            raise typer.Exit(1)
-
-    else:
-        # Fallback
-        typer.echo(f"Unknown command type: {resolution['type']}")
+@app.command(hidden=True)
+def _console():
+    """Launch interactive console (internal command)."""
+    try:
+        from .console import InteractiveConsole
+        console = InteractiveConsole()
+        asyncio.run(console.run())
+    except KeyboardInterrupt:
+        typer.echo("\nExiting...")
+    except Exception as e:
+        typer.echo(f"Error launching console: {e}", err=True)
         raise typer.Exit(1)
+
+
+# Direct coding tool commands
+@app.command()
+def claude(
+    request: Annotated[Optional[List[str]], typer.Argument(help="Request to pass to Claude")] = None
+):
+    """Launch Claude Code with context."""
+    handle_coding_tool_command("claude", " ".join(request) if request else "")
+
+
+@app.command()
+def cursor(
+    request: Annotated[Optional[List[str]], typer.Argument(help="Request to pass to Cursor")] = None
+):
+    """Launch Cursor-agent with context."""
+    handle_coding_tool_command("cursor", " ".join(request) if request else "")
+
+
+@app.command()
+def gemini(
+    request: Annotated[Optional[List[str]], typer.Argument(help="Request to pass to Gemini")] = None
+):
+    """Launch Gemini CLI with context."""
+    handle_coding_tool_command("gemini", " ".join(request) if request else "")
 
 
 def handle_coding_tool_command(tool_name: str, request: str):
     """Handle direct coding tool launch commands."""
     logger.info(f"Launching {tool_name} with request: '{request}'")
-    
+
     from .tools import launch_coding_tool
     try:
         result = launch_coding_tool(tool_name, request)
@@ -170,99 +133,84 @@ def handle_coding_tool_command(tool_name: str, request: str):
         raise typer.Exit(1)
 
 
-def handle_system_command(args: List[str]):
-    """Handle system commands."""
-    if not args:
-        typer.echo("System commands: models, profile, config, build, help, version")
-        return
-    
-    subcommand = args[0]
-    sub_args = args[1:] if len(args) > 1 else []
-    
-    if subcommand == "models":
-        handle_models_command(sub_args)
-    elif subcommand == "profile":
-        handle_profile_command(sub_args)
-    elif subcommand == "config":
-        handle_config_command(sub_args)
-    elif subcommand == "launch":
-        handle_launch_command(sub_args)
-    elif subcommand == "build":
-        handle_rebuild_command(sub_args)
-    elif subcommand == "help":
-        typer.echo(USAGE_TEXT.format(app_name=APP_NAME))
-    elif subcommand == "version":
-        typer.echo(f"{APP_NAME} {VERSION}")
+# App management commands
+@app_group.command("list")
+def app_list():
+    """List available apps."""
+    apps_module.list_apps()
+
+
+@app_group.command("run")
+def app_run(
+    name: Annotated[str, typer.Argument(help="App name to run")],
+    args: Annotated[Optional[List[str]], typer.Argument(help="Arguments to pass to the app")] = None
+):
+    """Run an app."""
+    exit_code = apps_module.run(name, args or [])
+    raise typer.Exit(exit_code)
+
+
+@app_group.command("info")
+def app_info(
+    name: Annotated[str, typer.Argument(help="App name to show info for")]
+):
+    """Show app details."""
+    discovered = apps_module.discover()
+    app_info = discovered.get(name)
+    if app_info:
+        typer.echo(f"App: {name}")
+        if app_info.get('description'):
+            typer.echo(f"Description: {app_info['description']}")
+        if app_info.get('exports'):
+            typer.echo(f"CLI Exports: {', '.join(app_info['exports'])}")
+        if app_info.get('entry'):
+            typer.echo(f"Entry: {app_info['entry']}")
+        if app_info.get('path'):
+            typer.echo(f"Path: {app_info['path']}")
     else:
-        typer.echo(f"Unknown system command: {subcommand}")
-        typer.echo("Available: models, profile, config, build, launch, help, version")
+        typer.echo(f"App '{name}' not found")
+        raise typer.Exit(1)
 
 
-def handle_app_command(args: List[str]):
-    """Handle app management commands."""
-    if not args:
-        typer.echo("App commands: list, run <name>, info <name>")
-        return
-    
-    subcommand = args[0]
-    sub_args = args[1:] if len(args) > 1 else []
-    
-    if subcommand == "list":
-        apps_module.list_apps()
-    elif subcommand == "run":
-        if not sub_args:
-            typer.echo("Usage: clanker app run <name> [args]")
-            return
-        app_name = sub_args[0]
-        app_args = sub_args[1:] if len(sub_args) > 1 else []
-        exit_code = apps_module.run(app_name, app_args)
-        raise typer.Exit(exit_code)
-    elif subcommand == "info":
-        if not sub_args:
-            typer.echo("Usage: clanker app info <name>")
-            return
-        app_name = sub_args[0]
-        # Get app info from apps module
-        from . import apps as apps_module
-        discovered = apps_module.discover()
-        app_info = discovered.get(app_name)
-        if app_info:
-            typer.echo(f"App: {app_name}")
-            if app_info.get('description'):
-                typer.echo(f"Description: {app_info['description']}")
-            if app_info.get('exports'):
-                typer.echo(f"CLI Exports: {', '.join(app_info['exports'])}")
-            if app_info.get('entry'):
-                typer.echo(f"Entry: {app_info['entry']}")
-            if app_info.get('path'):
-                typer.echo(f"Path: {app_info['path']}")
-        else:
-            typer.echo(f"App '{app_name}' not found")
-    elif subcommand == "scaffold":
-        if len(sub_args) < 2:
-            typer.echo("Usage: clanker app scaffold <name> <description>")
-            return
-        app_name = sub_args[0]
-        description = " ".join(sub_args[1:])
-        handle_scaffold_command(app_name, description)
-    else:
-        typer.echo(f"Unknown app command: {subcommand}")
-        typer.echo("Available: list, run, info, scaffold")
+@app_group.command("scaffold")
+def app_scaffold(
+    name: Annotated[str, typer.Argument(help="App name to create")],
+    description: Annotated[str, typer.Argument(help="App description")]
+):
+    """Create new app with guidance."""
+    # Create app directory
+    app_dir = Path(f"apps/{name}")
+    if app_dir.exists():
+        typer.echo(f"App directory apps/{name} already exists!", err=True)
+        raise typer.Exit(1)
+
+    try:
+        app_dir.mkdir(parents=True)
+        typer.echo(f"Created apps/{name}/")
+
+        # Generate scaffold context
+        from clanker.context.templates import app_scaffold_context
+        instructions = app_scaffold_context(name, description)
+
+        # Write INSTRUCTIONS.md
+        instructions_file = app_dir / "INSTRUCTIONS.md"
+        with open(instructions_file, "w") as f:
+            f.write(instructions)
+
+        typer.echo(f"Generated INSTRUCTIONS.md with scaffold guide")
+        typer.echo(f"Next steps:")
+        typer.echo(f"  cd apps/{name}")
+        typer.echo(f"  Follow the instructions in INSTRUCTIONS.md")
+
+    except Exception as e:
+        typer.echo(f"Error creating scaffold: {e}", err=True)
+        raise typer.Exit(1)
 
 
-def handle_profile_command(args: List[str]):
-    """Handle profile commands."""
-    typer.echo("Profile management not yet implemented")
-
-
-def handle_config_command(args: List[str]):
-    """Handle config commands."""
-    typer.echo("Configuration management not yet implemented")
-
-
-def handle_models_command(args: List[str]):
-    """Handle models command."""
-    # Reuse existing models command logic
+# System management commands
+@system_group.command("models")
+def system_models():
+    """Show available AI models."""
     providers = list_available_providers()
     if not providers:
         typer.echo("No API keys configured. Set these in .env:")
@@ -284,111 +232,167 @@ def handle_models_command(args: List[str]):
                 typer.echo(f"    - {model}")
 
 
-def handle_launch_command(args: List[str]):
-    """Handle launch command for coding tools."""
-    if not args:
-        typer.echo("Usage: clanker system launch <tool> [--app <app_name>] [--request <request>]")
-        typer.echo("Tools: claude, cursor, gemini")
-        return
+@system_group.command("profile")
+def system_profile():
+    """Manage profiles."""
+    typer.echo("Profile management not yet implemented")
 
-    tool_name = args[0]
-    app_name = None
-    user_request = None
 
-    # Parse optional args
-    i = 1
-    while i < len(args):
-        if args[i] == "--app" and i + 1 < len(args):
-            app_name = args[i + 1]
-            i += 2
-        elif args[i] == "--request" and i + 1 < len(args):
-            user_request = " ".join(args[i + 1:])
-            break
-        else:
-            i += 1
+@system_group.command("config")
+def system_config():
+    """Configuration settings."""
+    typer.echo("Configuration management not yet implemented")
+
+
+@system_group.command("launch")
+def system_launch(
+    tool: Annotated[str, typer.Argument(help="Tool to launch (claude, cursor, gemini)")],
+    app_name: Annotated[Optional[str], typer.Option("--app", help="App context to use")] = None,
+    request: Annotated[Optional[str], typer.Option("--request", help="Request to pass to tool")] = None
+):
+    """Launch coding tools with advanced options."""
+    if tool not in CODING_TOOLS:
+        typer.echo(f"Unknown tool: {tool}")
+        typer.echo(f"Available tools: {', '.join(CODING_TOOLS)}")
+        raise typer.Exit(1)
 
     # Build query from args for consistency with agent approach
     query_parts = []
     if app_name:
         query_parts.append(f"working on {app_name}")
-    if user_request:
-        query_parts.append(user_request)
+    if request:
+        query_parts.append(request)
     query = " ".join(query_parts) if query_parts else ""
 
     # Use the same launch tool as the agent
     from .tools import launch_coding_tool
     try:
-        result = launch_coding_tool(tool_name, query)
+        result = launch_coding_tool(tool, query)
         # If we get here, launch failed - show error
         if result and result.startswith("❌"):
             typer.echo(result, err=True)
+            raise typer.Exit(1)
     except Exception as e:
         typer.echo(f"Launch failed: {e}", err=True)
+        raise typer.Exit(1)
 
 
-def handle_rebuild_command(args: List[str]):
-    """Handle rebuild command to regenerate instruction files."""
+@system_group.command("build")
+def system_build():
+    """Build instruction files from snippets."""
     try:
         from .context import build_all_contexts
-        
+
         # Build all contexts without query
         results = build_all_contexts()
-        
+
         # Show results
         successful = [name for name, success in results.items() if success]
         failed = [name for name, success in results.items() if not success]
-        
+
         if successful:
             typer.echo(f"✅ Successfully rebuilt: {', '.join(successful)}")
-        
+
         if failed:
             typer.echo(f"❌ Failed to rebuild: {', '.join(failed)}", err=True)
             raise typer.Exit(1)
-        
+
         if not successful and not failed:
             typer.echo("⚠️ No instruction files to rebuild")
-            
+
     except Exception as e:
         typer.echo(f"❌ Rebuild failed: {e}", err=True)
         raise typer.Exit(1)
 
 
-def handle_scaffold_command(app_name: str, description: str):
-    """Handle scaffold command for new apps."""
-    # Create app directory
-    app_dir = Path(f"apps/{app_name}")
-    if app_dir.exists():
-        typer.echo(f"App directory apps/{app_name} already exists!", err=True)
-        return
-
-    try:
-        app_dir.mkdir(parents=True)
-        typer.echo(f"Created apps/{app_name}/")
-
-        # Generate scaffold context
-        from clanker.context.templates import app_scaffold_context
-        instructions = app_scaffold_context(app_name, description)
-
-        # Write INSTRUCTIONS.md
-        instructions_file = app_dir / "INSTRUCTIONS.md"
-        with open(instructions_file, "w") as f:
-            f.write(instructions)
-
-        typer.echo(f"Generated INSTRUCTIONS.md with scaffold guide")
-        typer.echo(f"Next steps:")
-        typer.echo(f"  cd apps/{app_name}")
-        typer.echo(f"  Follow the instructions in INSTRUCTIONS.md")
-
-    except Exception as e:
-        typer.echo(f"Error creating scaffold: {e}", err=True)
-
-
-# Remove old typer commands - everything goes through main now
+@system_group.command("version")
+def system_version():
+    """Show version."""
+    typer.echo(f"{APP_NAME} {VERSION}")
 
 
 def main():
     """Entry point for the clanker CLI."""
-    app()
+    import sys
+    import os
+
+    # Check if no arguments provided - launch console
+    if len(sys.argv) == 1:
+        try:
+            from .console import InteractiveConsole
+            console = InteractiveConsole()
+            asyncio.run(console.run())
+        except KeyboardInterrupt:
+            typer.echo("\nExiting...")
+        except Exception as e:
+            typer.echo(f"Error launching console: {e}", err=True)
+            sys.exit(1)
+        return
+
+    # Store original argv for fallback
+    original_args = sys.argv[1:]
+
+    # Hook into sys.exit to catch typer command not found errors
+    original_exit = sys.exit
+    original_stderr = sys.stderr
+    exit_called = False
+    exit_code = 0
+
+    def exit_hook(code=0):
+        nonlocal exit_called, exit_code
+        exit_called = True
+        exit_code = code
+        # Don't actually exit - let us handle it
+
+    # Temporarily replace sys.exit and suppress stderr for command not found
+    sys.exit = exit_hook
+
+    # For command not found (exit code 2), suppress stderr during typer execution
+    from io import StringIO
+    temp_stderr = StringIO()
+    sys.stderr = temp_stderr
+
+    try:
+        app()
+    except SystemExit as e:
+        exit_called = True
+        exit_code = e.code
+    finally:
+        # Restore originals
+        sys.exit = original_exit
+        sys.stderr = original_stderr
+
+    # If typer tried to exit with code 2, check if it's a subcommand group needing help or unknown command
+    if exit_called and exit_code == 2:
+        request_str = " ".join(original_args)
+
+        # Skip natural language for help requests
+        if any(word in request_str.lower() for word in ["--help", "-h", "help"]):
+            sys.stderr.write(temp_stderr.getvalue())  # Show the original typer error
+            sys.exit(exit_code)
+
+        # Skip natural language for known subcommand groups that need arguments
+        # Check if the first arg matches our known subcommand groups
+        if original_args and original_args[0] in ["app", "system"]:
+            sys.stderr.write(temp_stderr.getvalue())  # Show the original typer error
+            sys.exit(exit_code)
+
+        # Try natural language for truly unknown commands
+        logger.info(f"Natural language fallback for: '{request_str}'")
+        try:
+            logger.debug("Getting agent instance")
+            agent = get_agent()
+            logger.debug("Calling agent.handle_request()")
+            result = agent.handle_request(request_str)
+            logger.debug(f"Agent returned result: '{result['response'][:100]}...'")
+            typer.echo(result['response'])
+        except Exception as nl_error:
+            logger.error(f"CLI natural language handling failed: {str(nl_error)}", exc_info=True)
+            typer.echo(f"Error: {nl_error}", err=True)
+            sys.exit(1)
+    elif exit_called:
+        # Other exit codes - honor them
+        sys.exit(exit_code)
 
 
 if __name__ == "__main__":
