@@ -173,10 +173,8 @@ def build_all_contexts(query: Optional[str] = None) -> Dict[str, bool]:
     if apps_context and apps_context != "No apps found in apps/ directory.":
         builder.add(apps_context, "Current Apps")
     
-    # Add daemon tools section
-    daemon_context = _get_daemon_tools_context()
-    if daemon_context:
-        builder.add(daemon_context, "Daemon Management")
+    # Add daemon management section
+    builder.add_snippet("daemon_management")
     
     # Add smart hints about current system state
     hints = get_smart_hints()
@@ -222,21 +220,3 @@ def get_available_apps_context() -> str:
     return "\n".join(lines)
 
 
-def _get_daemon_tools_context() -> str:
-    """Get brief context about daemon management tools."""
-    return """Available daemon management commands:
-- `daemon_list()` - Show all daemons with status
-- `daemon_start(app, daemon_id)` - Start specific daemon  
-- `daemon_stop(app, daemon_id)` - Stop specific daemon
-- `daemon_logs(app, daemon_id)` - View recent logs
-- `daemon_status(app, daemon_id)` - Check daemon status
-- `daemon_restart(app, daemon_id)` - Restart daemon
-- `daemon_kill_all()` - Emergency stop all daemons
-- `daemon_enable_autostart(app, daemon_id)` - Enable autostart
-- `daemon_start_enabled()` - Start all autostart-enabled daemons
-
-Daemons are defined in app's `pyproject.toml`:
-```toml
-[tool.clanker.daemons]  
-background = "python daemon.py --interval 300"
-```"""
