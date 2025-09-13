@@ -5,17 +5,18 @@ Apps expose their functionality as AI tools by adding exports to `pyproject.toml
 
 ```toml
 [tool.clanker.exports]
-hello = "python main.py hello {name}"
-status = "python main.py status"
-search = "python main.py search --query {query}"
+hello = {cmd = "python main.py hello {name}", desc = "Generate a greeting"}
+status = {cmd = "python main.py status", desc = "Show current status"}
+search = {cmd = "python main.py search --query {query}", desc = "Search with query"}
+list = {cmd = "python main.py list", desc = "List all items"}
 ```
 
 ## Tool Discovery
 The Clanker agent automatically discovers these exports and creates AI tools:
 
-- `appname_hello(name="Alice")` → executes `python apps/appname/main.py hello Alice`
-- `appname_status()` → executes `python apps/appname/main.py status`  
-- `appname_search(query="pasta")` → executes `python apps/appname/main.py search --query pasta`
+- `appname_hello(name="Alice")` → executes `uv run --project apps/appname python main.py hello Alice`
+- `appname_status()` → executes `uv run --project apps/appname python main.py status`
+- `appname_search(query="pasta")` → executes `uv run --project apps/appname python main.py search --query pasta`
 
 ## Usage Examples
 ```bash

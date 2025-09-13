@@ -1,18 +1,19 @@
-"""Unified tool registry system for Clanker.
+"""Simplified tool registry system for Clanker.
 
 This module provides a clean abstraction for managing tool metadata,
 registration, and execution for both core Clanker tools and app exports.
 """
 
 import inspect
+import json
+import os
+import shlex
+import subprocess
+import tomllib
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Callable, Set
 from functools import wraps
 from pathlib import Path
-import tomllib
-import subprocess
-import shlex
-import os
+from typing import Dict, List, Optional, Any, Callable
 
 from .logger import get_logger
 
@@ -27,22 +28,18 @@ class ToolParameter:
     required: bool = True
     default: Any = None
     description: Optional[str] = None
-    choices: Optional[List[str]] = None  # For enum types
 
 
-@dataclass 
+@dataclass
 class ToolMetadata:
     """Complete metadata for a tool."""
     name: str
     description: str
     category: str = "general"
     parameters: Dict[str, ToolParameter] = field(default_factory=dict)
-    side_effects: List[str] = field(default_factory=list)
     needs_confirmation: bool = False
-    long_running: bool = False
-    idempotent: bool = False
-    hidden: bool = False  # Hide from tool listings
-    
+    hidden: bool = False
+
     @property
     def display_name(self) -> str:
         """Human-friendly display name."""
@@ -60,57 +57,50 @@ class AppManifest:
     exports: Dict[str, str] = field(default_factory=dict)  # name -> cli_template
     daemons: Dict[str, str] = field(default_factory=dict)  # id -> command
     tool_metadata: Dict[str, ToolMetadata] = field(default_factory=dict)
-    
+
     @classmethod
     def from_pyproject(cls, app_path: Path) -> Optional["AppManifest"]:
         """Load app manifest from pyproject.toml."""
         pyproject_path = app_path / "pyproject.toml"
         if not pyproject_path.exists():
             return None
-            
+
         try:
             with open(pyproject_path, "rb") as f:
                 data = tomllib.load(f)
-            
+
             clanker_config = data.get("tool", {}).get("clanker", {})
             if not clanker_config:
                 return None
-            
+
             app_config = clanker_config.get("app", {})
-            exports = clanker_config.get("exports", {})
+            exports_raw = clanker_config.get("exports", {})
             daemons = clanker_config.get("daemons", {})
-            tools_config = clanker_config.get("tools", {})
-            
-            # Build tool metadata from config
+
+            # Process exports - dict format only
+            exports = {}
             tool_metadata = {}
-            for export_name in exports:
-                if export_name in tools_config:
-                    tool_cfg = tools_config[export_name]
-                    params = {}
-                    
-                    # Parse parameters
-                    params_cfg = tool_cfg.get("params", {})
-                    for param_name, param_cfg in params_cfg.items():
-                        params[param_name] = ToolParameter(
-                            name=param_name,
-                            type=param_cfg.get("type", "str"),
-                            required=param_cfg.get("required", True),
-                            default=param_cfg.get("default"),
-                            description=param_cfg.get("description"),
-                            choices=param_cfg.get("choices")
-                        )
-                    
-                    tool_metadata[export_name] = ToolMetadata(
-                        name=export_name,
-                        description=tool_cfg.get("description", f"Run {export_name}"),
-                        category="app",
-                        parameters=params,
-                        side_effects=tool_cfg.get("side_effects", []),
-                        needs_confirmation=tool_cfg.get("needs_confirmation", False),
-                        long_running=tool_cfg.get("long_running", False),
-                        idempotent=tool_cfg.get("idempotent", False)
-                    )
-            
+
+            for export_name, export_config in exports_raw.items():
+                if isinstance(export_config, str):
+                    raise ValueError(f"Export '{export_name}' uses deprecated string format. Use dict format: {{cmd = \"...\", desc = \"...\"}}")
+
+                # Dict format: {cmd = "...", desc = "...", confirm = true}
+                cli_template = export_config.get("cmd", f"python main.py {export_name}")
+                description = export_config.get("desc", f"Run {export_name}")
+                needs_confirmation = export_config.get("confirm", False)
+
+                exports[export_name] = cli_template
+
+                # Create simple metadata
+                metadata = ToolMetadata(
+                    name=export_name,
+                    description=description,
+                    category="app",
+                    needs_confirmation=needs_confirmation
+                )
+                tool_metadata[export_name] = metadata
+
             return cls(
                 name=app_path.name,
                 path=app_path,
@@ -121,7 +111,7 @@ class AppManifest:
                 daemons=daemons,
                 tool_metadata=tool_metadata
             )
-            
+
         except Exception as e:
             logger.warning(f"Failed to load manifest from {app_path}: {e}")
             return None
@@ -129,27 +119,27 @@ class AppManifest:
 
 class ToolRegistry:
     """Central registry for all Clanker tools."""
-    
+
     def __init__(self):
         self._tools: Dict[str, Callable] = {}
         self._metadata: Dict[str, ToolMetadata] = {}
         self._app_manifests: Dict[str, AppManifest] = {}
-        
+
     def register(self, func: Callable, metadata: ToolMetadata) -> None:
         """Register a tool with its metadata."""
         tool_name = func.__name__
         self._tools[tool_name] = func
         self._metadata[tool_name] = metadata
         logger.debug(f"Registered tool: {tool_name}")
-        
+
     def get_tool(self, name: str) -> Optional[Callable]:
         """Get a tool function by name."""
         return self._tools.get(name)
-        
+
     def get_metadata(self, name: str) -> Optional[ToolMetadata]:
         """Get metadata for a tool."""
         return self._metadata.get(name)
-        
+
     def list_tools(self, category: Optional[str] = None, include_hidden: bool = False) -> List[str]:
         """List all registered tools, optionally filtered by category."""
         tools = []
@@ -160,7 +150,7 @@ class ToolRegistry:
                 continue
             tools.append(name)
         return sorted(tools)
-        
+
     def get_display_info(self, name: str) -> Dict[str, str]:
         """Get display information for a tool."""
         metadata = self._metadata.get(name)
@@ -175,25 +165,25 @@ class ToolRegistry:
             "description": f"Run {name}",
             "category": "unknown"
         }
-        
+
     def discover_apps(self, apps_dir: Path = Path("./apps")) -> None:
         """Discover and register all app tools."""
         if not apps_dir.exists():
             return
-            
+
         for app_path in apps_dir.iterdir():
             if not app_path.is_dir() or app_path.name.startswith(("_", ".")):
                 continue
-                
+
             manifest = AppManifest.from_pyproject(app_path)
             if manifest and manifest.exports:
                 self._app_manifests[manifest.name] = manifest
-                
+
                 # Register each export as a tool
                 for export_name, cli_template in manifest.exports.items():
                     tool_name = f"{manifest.name}_{export_name}"
                     metadata = manifest.tool_metadata.get(export_name)
-                    
+
                     if not metadata:
                         # Create default metadata
                         metadata = ToolMetadata(
@@ -204,7 +194,7 @@ class ToolRegistry:
                     else:
                         # Update name to include app prefix
                         metadata.name = tool_name
-                    
+
                     # Create wrapper for app tool
                     wrapper = AppToolWrapper(
                         app_name=manifest.name,
@@ -212,13 +202,13 @@ class ToolRegistry:
                         cli_template=cli_template,
                         metadata=metadata
                     )
-                    
+
                     self.register(wrapper, metadata)
-                    
+
     def get_app_manifest(self, app_name: str) -> Optional[AppManifest]:
         """Get manifest for an app."""
         return self._app_manifests.get(app_name)
-        
+
     def list_apps(self) -> List[str]:
         """List all discovered apps."""
         return sorted(self._app_manifests.keys())
@@ -226,7 +216,7 @@ class ToolRegistry:
 
 class AppToolWrapper:
     """Wrapper for app CLI tools to provide a consistent interface."""
-    
+
     def __init__(self, app_name: str, export_name: str, cli_template: str, metadata: ToolMetadata):
         self.app_name = app_name
         self.export_name = export_name
@@ -236,31 +226,34 @@ class AppToolWrapper:
         self.__qualname__ = f"{app_name}_{export_name}"
         self.__doc__ = metadata.description
         self.__module__ = "clanker.app_tools"
-        
+
     def __call__(self, **kwargs) -> str:
         """Execute the app tool with provided parameters."""
         try:
             # Parse placeholders from template
             import re
             placeholders = re.findall(r"\{(\w+)\}", self.cli_template)
-            
-            # Build format arguments
+
+            # Build format arguments - let pydantic-ai handle type conversion
             format_args = {}
             for placeholder in placeholders:
                 value = kwargs.get(placeholder, "")
-                # Handle different types
-                if placeholder in self.metadata.parameters:
-                    param = self.metadata.parameters[placeholder]
-                    value = self._serialize_value(value, param.type)
+                if isinstance(value, (list, dict)):
+                    value = json.dumps(value)
+                else:
+                    value = str(value)
+                # Quote strings that might contain spaces or special characters
+                if isinstance(value, str) and (' ' in value or '#' in value or any(c in value for c in '"\'()[]{}|;&$`<>')):
+                    value = shlex.quote(value)
                 format_args[placeholder] = value
-                
+
             # Format command
             command = self.cli_template.format(**format_args)
-            
+
             # Clean environment
             env = os.environ.copy()
             env.pop("VIRTUAL_ENV", None)
-            
+
             # Execute via uv run
             result = subprocess.run(
                 ["uv", "run", "--project", f"apps/{self.app_name}"] + shlex.split(command),
@@ -270,35 +263,18 @@ class AppToolWrapper:
                 timeout=60,
                 env=env
             )
-            
+
             if result.returncode == 0:
                 return result.stdout.strip()
             else:
                 error_msg = result.stderr.strip() or f"Command failed with exit code {result.returncode}"
                 return f"Error: {error_msg}"
-                
+
         except subprocess.TimeoutExpired:
             return f"Command timed out: {self.cli_template}"
         except Exception as e:
             logger.error(f"Tool execution failed for {self.app_name}.{self.export_name}: {e}")
             return f"Tool execution failed: {str(e)}"
-            
-    def _serialize_value(self, value: Any, type_str: str) -> str:
-        """Serialize a value based on its type."""
-        if value is None:
-            return ""
-        
-        type_lower = type_str.lower()
-        if type_lower == "bool":
-            return "true" if value else "false"
-        elif type_lower == "json":
-            import json
-            return json.dumps(value)
-        elif type_lower.startswith("list"):
-            import json
-            return json.dumps(value)
-        else:
-            return str(value)
 
 
 def tool(name: str, description: str, category: str = "general", **kwargs):
@@ -307,11 +283,11 @@ def tool(name: str, description: str, category: str = "general", **kwargs):
         # Extract parameters from function signature
         sig = inspect.signature(func)
         parameters = {}
-        
+
         for param_name, param in sig.parameters.items():
             if param_name in ["self", "cls"]:
                 continue
-                
+
             # Determine type from annotation
             type_str = "str"
             if param.annotation != inspect.Parameter.empty:
@@ -324,15 +300,14 @@ def tool(name: str, description: str, category: str = "general", **kwargs):
                     type_str = "float"
                 elif type_hint == bool:
                     type_str = "bool"
-                # Handle Optional, List, etc. as needed
-                    
+
             parameters[param_name] = ToolParameter(
                 name=param_name,
                 type=type_str,
                 required=param.default == inspect.Parameter.empty,
                 default=param.default if param.default != inspect.Parameter.empty else None
             )
-            
+
         # Create metadata
         metadata = ToolMetadata(
             name=name,
@@ -341,14 +316,14 @@ def tool(name: str, description: str, category: str = "general", **kwargs):
             parameters=parameters,
             **kwargs
         )
-        
+
         # Store metadata on function for registration
         func.__tool_metadata__ = metadata
-        
+
         @wraps(func)
         def wrapper(*args, **kwargs):
             return func(*args, **kwargs)
-            
+
         return wrapper
     return decorator
 

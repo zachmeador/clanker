@@ -41,7 +41,7 @@ version = "0.1.0"
 dependencies = ["clanker", "typer"]
 
 [tool.clanker.exports]
-your_command = "python main.py your_command {name}"
+your_command = {cmd = "python main.py your_command {name}", desc = "Your command description"}
 ```
 
 ### Storage Integration
@@ -66,8 +66,8 @@ Make app commands available as AI tools by adding exports to `pyproject.toml`:
 
 ```toml
 [tool.clanker.exports]
-hello = "python main.py hello {name}"
-search = "python main.py search --query {query}"
+hello = {cmd = "python main.py hello {name}", desc = "Generate a greeting"}
+search = {cmd = "python main.py search --query {query}", desc = "Search with query"}
 ```
 
 The agent will see these as `your_app_hello(name="Alice")` and `your_app_search(query="pasta")` tools.

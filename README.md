@@ -37,9 +37,9 @@ Apps are CLI tools that export both commands and daemons as AI functions:
 ```toml
 # apps/recipes/pyproject.toml
 [tool.clanker.exports]
-add = "python main.py add {recipe}"
-search = "python main.py search {query}"
-list = "python main.py list"
+add = {cmd = "python main.py add {recipe}", desc = "Add a new recipe"}
+search = {cmd = "python main.py search {query}", desc = "Search recipes"}
+list = {cmd = "python main.py list", desc = "List all recipes"}
 
 [tool.clanker.daemons]
 web_server = "python main.py serve --port 8000"
@@ -52,6 +52,8 @@ The agent can:
 - **Access storage** - Use isolated file storage and shared databases
 
 Each app runs in its own `uv` environment with automatic tool discovery and daemon management.
+
+**Note**: Export commands like `"python main.py add {recipe}"` are executed as `uv run --project apps/recipes python main.py add {recipe}` to ensure proper isolation.
 
 ## Storage System
 

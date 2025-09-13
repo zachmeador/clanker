@@ -161,10 +161,7 @@ def _discover_app_metadata() -> Dict[str, Dict[str, Any]]:
                         "description": param.description
                     } for name, param in metadata.parameters.items()},
                     "flags": {
-                        "side_effects": metadata.side_effects,
-                        "needs_confirmation": metadata.needs_confirmation,
-                        "long_running": metadata.long_running,
-                        "idempotent": metadata.idempotent
+                        "needs_confirmation": metadata.needs_confirmation
                     }
                 }
     

@@ -78,7 +78,7 @@ def _inspect_app(path: Path) -> Optional[dict]:
     # Check for __main__.py
     if (path / "__main__.py").exists():
         entry_file = path / "__main__.py"
-        info["entry"] = f"cd {path} && uv run python -m ."
+        info["entry"] = f"cd {path} && uv run python __main__.py"
     
     # Check for main.py or cli.py or app.py with main guard
     if not entry_file:

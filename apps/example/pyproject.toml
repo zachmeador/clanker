@@ -27,49 +27,12 @@ examples = [
 
 # CLI exports - what commands are available as tools
 [tool.clanker.exports]
-add = "python main.py add {entry}"
-list = "python main.py list --count {count}"
-search = "python main.py search {query}"
-stats = "python main.py stats"
-backup = "python main.py backup"
+add = {cmd = "python main.py add {entry}", desc = "Add a new journal entry with optional hashtags"}
+list = {cmd = "python main.py list --count {count}", desc = "Show recent journal entries"}
+search = {cmd = "python main.py search {query}", desc = "Search journal entries by content or hashtags"}
+stats = {cmd = "python main.py stats", desc = "Show journal statistics and analytics"}
+backup = {cmd = "python main.py backup", desc = "Export all journal entries to JSON format in vault"}
 
 # Daemon configuration
 [tool.clanker.daemons]
 summarizer = "python daemon.py --interval 86400"
-
-# Tool metadata
-[tool.clanker.tools.add]
-description = "Add a new journal entry with automatic metadata extraction"
-side_effects = ["creates_files", "modifies_database"]
-
-[tool.clanker.tools.add.params.entry]
-type = "str"
-required = true
-description = "The journal entry text. Use #hashtags to add tags."
-
-[tool.clanker.tools.list]
-description = "Show recent journal entries in a formatted display"
-idempotent = true
-
-[tool.clanker.tools.list.params.count]
-type = "int"
-required = false
-default = 5
-description = "Number of recent entries to show"
-
-[tool.clanker.tools.search]
-description = "Search journal entries by content, tags, or summary"
-idempotent = true
-
-[tool.clanker.tools.search.params.query]
-type = "str"
-required = true
-description = "Search term to look for in entries"
-
-[tool.clanker.tools.stats]
-description = "Show comprehensive journal statistics"
-idempotent = true
-
-[tool.clanker.tools.backup]
-description = "Export all journal entries to a timestamped JSON file"
-side_effects = ["creates_files"]
