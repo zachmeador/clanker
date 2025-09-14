@@ -29,7 +29,7 @@ def launch_coding_tool(tool: str, query: str = "") -> str:
     """Launch an interactive coding CLI session with Clanker context.
 
     This tool generates appropriate context for the given query and launches
-    the specified coding tool (Claude, Cursor, Windsurf, etc.). The session 
+    the specified coding tool. The session 
     will be interactive with full context about the Clanker system.
 
     Args:
@@ -47,6 +47,7 @@ def launch_coding_tool(tool: str, query: str = "") -> str:
             "claude": "claude",
             "cursor": "cursor-agent",
             "gemini": "gemini",
+            "codex": "codex",
         }
         
         tool_lower = tool.lower()
@@ -107,7 +108,7 @@ def launch_coding_tool(tool: str, query: str = "") -> str:
                 # Gemini uses -i flag for interactive mode with query
                 cmd_args = [cli_command, "-i", context_query]
             else:
-                # Claude and Cursor accept query directly
+                # Claude, Cursor, and Codex accept query directly
                 cmd_args = [cli_command, context_query]
             
             # Use os.execvp to replace the current process with the tool

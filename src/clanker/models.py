@@ -27,18 +27,16 @@ class ModelTier(str, Enum):
 # Tier preferences (ordered by preference) - using real model names
 TIER_MODELS = {
     ModelTier.LOW: [
-        "openai:gpt-4o-mini",
+        "openai:gpt-5-mini",
         "anthropic:claude-3-5-haiku-latest",
     ],
     ModelTier.MEDIUM: [
-        "openai:gpt-4o",
-        "anthropic:claude-3-5-sonnet-latest",
-        "anthropic:claude-3-5-haiku-latest",
+        "openai:gpt-5",
+        "anthropic:claude-sonnet-4-0"
     ],
     ModelTier.HIGH: [
-        "openai:gpt-4o",
-        "anthropic:claude-3-5-sonnet-latest",
-        "anthropic:claude-3-7-sonnet-latest",
+        "openai:gpt-5",
+        "anthropic:claude-opus-4-0"
     ],
 }
 
@@ -71,8 +69,8 @@ def get_model(spec: Union[str, ModelTier]) -> Any:
         model = get_model(ModelTier.LOW)
         
         # Explicit model
-        model = get_model("openai:gpt-4o")
-        model = get_model("claude-sonnet-4-0")  # Auto-detects anthropic
+        model = get_model("openai:gpt-5")
+        model = get_model("claude-sonnet-4-0")
     """
     if isinstance(spec, ModelTier):
         # Try each model in tier until one is available
@@ -110,7 +108,7 @@ def _create_model(model_str: str) -> Any:
     """Create model instance, with clear errors if unavailable.
     
     Args:
-        model_str: Model identifier like "openai:gpt-4o" or "gpt-4o"
+        model_str: Model identifier like "openai:gpt-5" or "gpt-5"
         
     Returns:
         Pydantic AI Model instance
@@ -170,7 +168,7 @@ def _parse_model_string(model_str: str) -> tuple[str, str]:
     # Infer provider from common model name patterns
     model_lower = model_str.lower()
     
-    if model_str.startswith(("gpt-", "o1-", "o1")):
+    if model_str.startswith("gpt-"):
         return "openai", model_str
     elif model_str.startswith("claude"):
         return "anthropic", model_str
@@ -183,7 +181,7 @@ def _parse_model_string(model_str: str) -> tuple[str, str]:
     else:
         raise ValueError(
             f"Cannot infer provider for model '{model_str}'. "
-            f"Use explicit format 'provider:model' (e.g., 'openai:gpt-4o')"
+            f"Use explicit format 'provider:model' (e.g., 'openai:gpt-5')"
         )
 
 

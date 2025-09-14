@@ -275,13 +275,27 @@ class InteractiveConsole:
             console.print("[dim]Hint: Use 'clanker \"your request\"' for one-shot commands[/dim]")
             return
         
-        # Welcome message
-        console.print(Panel.fit(
-            "[bold cyan]Clanker Interactive Console[/bold cyan]\n"
-            "Type 'help' for commands, 'exit' to quit",
-            border_style="cyan"
-        ))
-        
+        # Welcome message with config status
+        try:
+            from .onboarding import get_config_status
+            config = get_config_status()
+
+            # Build status line
+            status_parts = []
+            if config['providers']:
+                status_parts.append(f"Providers: {', '.join(config['providers'])}")
+            if config['tools']:
+                status_parts.append(f"Tools: {', '.join(config['tools'])}")
+
+            status_line = " | ".join(status_parts) if status_parts else "No providers configured"
+
+            welcome_text = f"[bold cyan]Clanker Interactive Console[/bold cyan]\n{status_line}\n\nType 'help' for commands, 'exit' to quit"
+        except Exception:
+            # Fallback to simple welcome if config check fails
+            welcome_text = "[bold cyan]Clanker Interactive Console[/bold cyan]\nType 'help' for commands, 'exit' to quit"
+
+        console.print(Panel.fit(welcome_text, border_style="cyan"))
+
         # Show initial tips
         console.print("[dim]Try: 'list my apps', 'what recipes do I have', 'help me with...'[/dim]\n")
         

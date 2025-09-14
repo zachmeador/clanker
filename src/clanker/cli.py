@@ -40,7 +40,7 @@ app.add_typer(app_group, name="app")
 app.add_typer(system_group, name="system")
 
 # Supported coding tools
-CODING_TOOLS = {"claude", "cursor", "gemini"}
+CODING_TOOLS = {"claude", "cursor", "gemini", "codex"}
 
 # Simple module-level instances - lazy initialized
 _agent: Optional[ClankerAgent] = None
@@ -116,6 +116,14 @@ def gemini(
 ):
     """Launch Gemini CLI with context."""
     handle_coding_tool_command("gemini", " ".join(request) if request else "")
+
+
+@app.command()
+def codex(
+    request: Annotated[Optional[List[str]], typer.Argument(help="Request to pass to Codex")] = None
+):
+    """Launch OpenAI Codex CLI with context."""
+    handle_coding_tool_command("codex", " ".join(request) if request else "")
 
 
 def handle_coding_tool_command(tool_name: str, request: str):
@@ -305,6 +313,26 @@ def system_build():
         raise typer.Exit(1)
 
 
+@system_group.command("setup")
+def system_setup():
+    """Show setup guidance for API keys and coding tools."""
+    try:
+        from .onboarding import show_setup_guidance, offer_env_creation
+
+        # Show the setup guidance
+        show_setup_guidance()
+
+        # Offer to create .env file
+        if offer_env_creation():
+            typer.echo("You can now restart Clanker to use your configured API keys.")
+
+    except KeyboardInterrupt:
+        typer.echo("\nSetup interrupted")
+    except Exception as e:
+        typer.echo(f"Setup failed: {e}", err=True)
+        raise typer.Exit(1)
+
+
 @system_group.command("version")
 def system_version():
     """Show version."""
@@ -318,6 +346,16 @@ def main():
 
     # Check if no arguments provided - launch console
     if len(sys.argv) == 1:
+        # Check if user needs onboarding (no API keys configured)
+        try:
+            from .onboarding import needs_onboarding, run_onboarding
+            if needs_onboarding():
+                run_onboarding()
+                return
+        except Exception as e:
+            # If onboarding fails, continue to console
+            logger.warning(f"Onboarding check failed: {e}")
+
         try:
             from .console import InteractiveConsole
             console = InteractiveConsole()
