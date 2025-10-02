@@ -45,7 +45,7 @@ class ContextStore:
     
     def write_for_tool(self, tool: str, content: str) -> bool:
         """Write context for a specific tool."""
-        filename = self.TOOL_FILES.get(tool, self.TOOL_FILES["generic"])
+        filename = self.TOOL_FILES.get(tool, "INSTRUCTIONS.md")
         file_path = self.project_root / filename
         return self._write_file(file_path, content)
     

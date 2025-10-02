@@ -225,8 +225,6 @@ def system_models():
         typer.echo("  OPENAI_API_KEY=...")
         typer.echo("  ANTHROPIC_API_KEY=...")
         typer.echo("  GOOGLE_API_KEY=...")
-        typer.echo("  GROQ_API_KEY=...")
-        typer.echo("  MISTRAL_API_KEY=...")
         return
 
     typer.echo(f"Configured providers: {', '.join(providers)}")

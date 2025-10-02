@@ -94,8 +94,6 @@ def launch_coding_tool(tool: str, query: str = "") -> str:
                 'ANTHROPIC_API_KEY',
                 'OPENAI_API_KEY',
                 'GOOGLE_API_KEY',
-                'GROQ_API_KEY',
-                'MISTRAL_API_KEY',
                 'CLANKER_PROFILE',  # Remove Clanker-specific env vars
                 'CLANKER_REQUESTER_APP'
             ]

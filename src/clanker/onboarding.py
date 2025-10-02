@@ -116,11 +116,6 @@ To get started, you'll need to configure API keys and optionally install coding 
             "Gemini Pro, Flash",
             "https://aistudio.google.com/"
         )
-        table.add_row(
-            "Groq", "Optional",
-            "Llama, Mixtral (fast)",
-            "https://console.groq.com/"
-        )
 
         console.print(table)
 

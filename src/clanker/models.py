@@ -13,8 +13,6 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.models.groq import GroqModel
-from pydantic_ai.models.mistral import MistralModel
 
 
 class ModelTier(str, Enum):
@@ -47,8 +45,6 @@ def _get_available_providers() -> Dict[str, Optional[str]]:
         "openai": os.getenv("OPENAI_API_KEY"),
         "anthropic": os.getenv("ANTHROPIC_API_KEY"),
         "google": os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"),
-        "groq": os.getenv("GROQ_API_KEY"),
-        "mistral": os.getenv("MISTRAL_API_KEY"),
     }
 
 
@@ -90,8 +86,7 @@ def get_model(spec: Union[str, ModelTier]) -> Any:
                 f"Please set API keys in .env file:\n"
                 f"  OPENAI_API_KEY=...\n"
                 f"  ANTHROPIC_API_KEY=...\n"
-                f"  GOOGLE_API_KEY=...\n"
-                f"  GROQ_API_KEY=..."
+                f"  GOOGLE_API_KEY=..."
             )
         else:
             raise ValueError(
@@ -145,7 +140,7 @@ def _create_model(model_str: str) -> Any:
     else:
         raise ValueError(
             f"Unknown provider '{provider}'. "
-            f"Supported: openai, anthropic, google, groq, mistral"
+            f"Supported: openai, anthropic, google"
         )
 
 
@@ -167,17 +162,13 @@ def _parse_model_string(model_str: str) -> tuple[str, str]:
     
     # Infer provider from common model name patterns
     model_lower = model_str.lower()
-    
+
     if model_str.startswith("gpt-"):
         return "openai", model_str
     elif model_str.startswith("claude"):
         return "anthropic", model_str
     elif model_str.startswith("gemini"):
         return "google", model_str
-    elif model_str.startswith(("llama", "mixtral")):
-        return "groq", model_str
-    elif model_str.startswith("mistral"):
-        return "mistral", model_str
     else:
         raise ValueError(
             f"Cannot infer provider for model '{model_str}'. "
