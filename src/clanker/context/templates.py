@@ -175,12 +175,7 @@ def build_all_contexts(query: Optional[str] = None) -> Dict[str, bool]:
     
     # Add daemon management section
     builder.add_snippet("daemon_management")
-    
-    # Add smart hints about current system state
-    hints = get_smart_hints()
-    if hints and hints != "No app-specific context available.":
-        builder.add(hints, "System Status")
-    
+
     # Add user query if provided
     if query:
         builder.add(f"**Current Request**: {query}", "User Query")

@@ -105,6 +105,31 @@ Clanker: I'll launch Claude Code with full context...
 
 The tool opens with comprehensive context about your apps, architecture, and development patterns for seamless coding sessions.
 
+## Context Building System
+
+Clanker dynamically generates context files (INSTRUCTIONS.md, CLAUDE.md, etc.) to keep coding tools informed about your current system state:
+
+```python
+# Context is rebuilt automatically when:
+# 1. Launching coding tools (claude, cursor, etc.)
+# 2. Running `clanker build` command
+
+from clanker.context import build_all_contexts
+results = build_all_contexts(query="user request")
+```
+
+**How it works:**
+- **Modular snippets** - Base content from `src/clanker/context/snippets/`
+- **Dynamic discovery** - Live app exports, daemon status, system hints
+- **Tool-specific files** - CLAUDE.md, AGENTS.md (for Cursor), GEMINI.md
+- **Always current** - Context reflects real-time system state
+
+**Build triggers:**
+- `launch_coding_tool()` - Rebuilds before launching any coding session
+- `clanker build` - Manual rebuild command
+
+This ensures coding assistants have up-to-date knowledge of your apps, exports, storage patterns, and system architecture.
+
 ## Structure
 
 ```

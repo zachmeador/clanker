@@ -44,29 +44,16 @@ class ClankerAgent:
             instructions=instructions,
             toolsets=[toolset]
         )
-        
+
         # Add dynamic instructions that refresh each request
-        @self.agent.instructions
-        def add_daemon_status(ctx) -> str:
-            """Current daemon status - refreshed each request."""
-            try:
-                from .daemon import DaemonManager, DaemonStatus
-                manager = DaemonManager()
-                daemons = manager.list_daemons()
-                running = len([d for d in daemons if d['status'] == DaemonStatus.RUNNING])
-                if running > 0:
-                    return f"Current state: {running} daemons running."
-                return "Current state: No daemons running."
-            except Exception:
-                return ""
-        
         @self.agent.instructions
         def add_app_hints(ctx) -> str:
             """App usage hints - refreshed each request."""
             try:
                 from .context import get_smart_hints
                 return get_smart_hints()
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to generate app hints: {e}")
                 return ""
         
         logger.info("Agent created successfully with toolsets and dynamic instructions")

@@ -16,8 +16,10 @@ def get_app_hints() -> str:
     """Generate simple app-level hints for LLM context."""
     try:
         registry = get_registry()
-        registry.discover_apps()
-        
+        # Only discover apps if not already loaded
+        if not registry.list_apps():
+            registry.discover_apps()
+
         hints = []
         
         # App-specific hints (1-4 lines per app)
@@ -25,18 +27,9 @@ def get_app_hints() -> str:
             manifest = registry.get_app_manifest(app_name)
             if not manifest:
                 continue
-                
-            if app_name == "example":
-                hints.append("example app: Test with 'hello NAME' or 'check status' or 'weather NYC'. Returns formatted greetings, status tables, or mock weather data.")
-            
-            elif "weather" in app_name.lower() or "weather" in (manifest.capabilities or []):
-                hints.append(f"{app_name}: Ask 'what's the weather in CITY'. Returns JSON weather data, may cache results.")
-            
-            elif "recipe" in app_name.lower() or "cooking" in (manifest.capabilities or []):
-                hints.append(f"{app_name}: Try 'find recipe for pasta' or 'get recipe details'. Returns structured recipe data from nutritional databases.")
-            
-            elif manifest.summary and len(manifest.exports) > 0:
-                # Generic hint for other apps
+
+            # Generic hint for all apps based on manifest
+            if manifest.summary and len(manifest.exports) > 0:
                 tool_count = len(manifest.exports)
                 hints.append(f"{app_name}: {manifest.summary} ({tool_count} tools available).")
         
@@ -51,7 +44,8 @@ def get_app_hints() -> str:
                     hints.append(f"System: {running_count} daemons running. Use daemon_list to check status.")
                 else:
                     hints.append("System: No daemons running. Use daemon_start to launch background services.")
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to get daemon status: {e}")
                 hints.append(f"System: {len(daemon_tools)} daemon management tools available.")
         
         return "\n".join(hints) if hints else "No app-specific context available."

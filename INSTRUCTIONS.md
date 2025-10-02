@@ -14,6 +14,7 @@ Clanker is a lightweight LLM application framework where each app runs in its ow
 - **Storage conventions**: Vault for files, DB for tables, with permission system
 - **Daemon management**: Background services defined in app config
 - **Profile system**: Multiple isolated environments (default, dev, etc.)
+- **Context generation**: Dynamic instruction files built from snippets + live state
 
 ## Storage Patterns
 - Apps own their vault/database by default
@@ -64,7 +65,7 @@ version = "0.1.0"
 dependencies = ["clanker", "typer"]
 
 [tool.clanker.exports]
-your_command = "python main.py your_command {name}"
+your_command = {cmd = "python main.py your_command {name}", desc = "Your command description"}
 ```
 
 ### Storage Integration
@@ -89,8 +90,8 @@ Make app commands available as AI tools by adding exports to `pyproject.toml`:
 
 ```toml
 [tool.clanker.exports]
-hello = "python main.py hello {name}"
-search = "python main.py search --query {query}"
+hello = {cmd = "python main.py hello {name}", desc = "Generate a greeting"}
+search = {cmd = "python main.py search --query {query}", desc = "Search with query"}
 ```
 
 The agent will see these as `your_app_hello(name="Alice")` and `your_app_search(query="pasta")` tools.
@@ -120,9 +121,9 @@ files = vault.list("subfolder")  # Files in subfolder
 ```python
 from clanker.storage import DB
 
-db = DB.for_app("myapp")
+db = DB.for_app("myapp")  # Isolated database per app
 
-# Create table
+# Create table (in app's isolated database)
 db.create_table("items", {
     "id": "INTEGER PRIMARY KEY",
     "name": "TEXT NOT NULL",
@@ -137,35 +138,35 @@ results = db.query("items", {"name": "test"})
 ```
 
 ## Cross-App Access
-Apps can access each other's storage with explicit permissions:
+Apps have isolated storage by default:
+
+- **Vault**: Cross-app access with explicit permissions
+- **Database**: Each app has its own isolated SQLite database
 
 ```python
-# Grant permission
+# Vault cross-app access (with permissions)
 vault = Vault()
 vault.grant_permission("requester-app", "target-app", read=True, write=False)
 
 # Access another app's vault
 vault = Vault.for_app("target-app", requester_app="requester-app")
 data = vault.read("shared-config.yml")
+
+# Database isolation - no cross-app access
+db = DB.for_app("myapp")  # Uses data/default/apps/myapp/db.sqlite
 ```
 
 ## Storage Types
 - **Vault**: Files (.yml/.yaml auto-parsed, .md as text, others as binary)
-- **DB**: SQLite tables with app isolation and permissions
+- **DB**: Isolated SQLite database per app at `data/<profile>/apps/<app>/db.sqlite`
 
 # Current Apps
 
 ## example
 - **Location**: `apps/example/`
-- **Description**: Example app demonstrating CLI-based exports
-- **CLI Exports**: hello, status, weather
-- **Commands**: `clanker example_hello`, `clanker example_status`, `clanker example_weather`
-
-## weather_daemon
-- **Location**: `apps/weather_daemon/`
-- **Description**: Example weather monitoring daemon for Clanker
-- **CLI Exports**: weather, status
-- **Commands**: `clanker weather_daemon_weather`, `clanker weather_daemon_status`
+- **Description**: Personal journal app demonstrating all Clanker features
+- **CLI Exports**: add, list, search, stats, backup
+- **Commands**: `clanker example_add`, `clanker example_list`, `clanker example_search`, `clanker example_stats`, `clanker example_backup`
 
 ## Development
 Create new apps in `apps/` directory with:
@@ -175,25 +176,27 @@ Create new apps in `apps/` directory with:
 
 # Daemon Management
 
-Available daemon management commands:
-- `daemon_list()` - Show all daemons with status
-- `daemon_start(app, daemon_id)` - Start specific daemon  
-- `daemon_stop(app, daemon_id)` - Stop specific daemon
-- `daemon_logs(app, daemon_id)` - View recent logs
-- `daemon_status(app, daemon_id)` - Check daemon status
-- `daemon_restart(app, daemon_id)` - Restart daemon
-- `daemon_kill_all()` - Emergency stop all daemons
-- `daemon_enable_autostart(app, daemon_id)` - Enable autostart
-- `daemon_start_enabled()` - Start all autostart-enabled daemons
-
-Daemons are defined in app's `pyproject.toml`:
+## Configuration
+Daemons defined in app `pyproject.toml`:
 ```toml
-[tool.clanker.daemons]  
-background = "python daemon.py --interval 300"
+[tool.clanker.daemons]
+daemon_id = "python script.py --args"
 ```
 
-# System Status
+## Commands
+- `daemon_list()` - All daemons with status
+- `daemon_start(app, daemon_id)` - Start daemon
+- `daemon_stop(app, daemon_id)` - Stop daemon
+- `daemon_logs(app, daemon_id)` - View logs
+- `daemon_status(app, daemon_id)` - Check status
+- `daemon_restart(app, daemon_id)` - Restart daemon
+- `daemon_kill_all()` - Emergency stop all
+- `daemon_enable_autostart(app, daemon_id)` - Enable autostart
+- `daemon_start_enabled()` - Start autostart-enabled daemons
 
-example app: Test with 'hello NAME' or 'check status' or 'weather NYC'. Returns formatted greetings, status tables, or mock weather data.
-weather_daemon: Ask 'what's the weather in CITY'. Returns JSON weather data, may cache results.
-System: No daemons running. Use daemon_start to launch background services.
+## Implementation
+- Runs under `uv` in app environments: `uv run --project apps/{app} {command}`
+- State tracked in Clanker DB: `_daemons` (runtime), `_daemon_startup` (autostart)
+- PID files: `profile.daemons_dir/{app}_{daemon_id}.pid`
+- Logs: `profile.app_log_file({app}_daemon_{daemon_id})`
+- Graceful shutdown: SIGTERM → timeout → SIGKILL
