@@ -2,10 +2,11 @@
 
 import ast
 import os
+import shlex
 import subprocess
 import tomllib
 from pathlib import Path
-from typing import Dict, Optional, List, Any
+from typing import Dict, Optional, List, Any, Union
 
 
 def _project_root() -> Path:
@@ -67,7 +68,10 @@ def _inspect_app(path: Path) -> Optional[dict]:
         if scripts:
             # Use first script as entry
             script_name = next(iter(scripts.keys()))
-            info["entry"] = f"cd {path} && uv run {script_name}"
+            info["entry"] = {
+                "cwd": str(path),
+                "command": ["uv", "run", script_name]
+            }
             return info
     except (FileNotFoundError, tomllib.TOMLKitError, KeyError):
         pass
@@ -78,7 +82,10 @@ def _inspect_app(path: Path) -> Optional[dict]:
     # Check for __main__.py
     if (path / "__main__.py").exists():
         entry_file = path / "__main__.py"
-        info["entry"] = f"cd {path} && uv run python __main__.py"
+        info["entry"] = {
+            "cwd": str(path),
+            "command": ["uv", "run", "python", "__main__.py"]
+        }
     
     # Check for main.py or cli.py or app.py with main guard
     if not entry_file:
@@ -86,7 +93,10 @@ def _inspect_app(path: Path) -> Optional[dict]:
             candidate = path / name
             if candidate.exists() and _has_main_guard(candidate):
                 entry_file = candidate
-                info["entry"] = f"cd {path} && uv run python {name}"
+                info["entry"] = {
+                    "cwd": str(path),
+                    "command": ["uv", "run", "python", name]
+                }
                 break
     
     # Check any .py file with main guard
@@ -94,7 +104,10 @@ def _inspect_app(path: Path) -> Optional[dict]:
         for py_file in path.glob("*.py"):
             if _has_main_guard(py_file):
                 entry_file = py_file
-                info["entry"] = f"cd {path} && uv run python {py_file.name}"
+                info["entry"] = {
+                    "cwd": str(path),
+                    "command": ["uv", "run", "python", py_file.name]
+                }
                 break
     
     if not entry_file:
@@ -132,8 +145,6 @@ def _get_description(py_file: Path) -> Optional[str]:
     return None
 
 
-
-
 def run(app_name: str, args: List[str] = None) -> int:
     """Run an app by name."""
     apps = discover()
@@ -150,17 +161,32 @@ def run(app_name: str, args: List[str] = None) -> int:
         print(f"App '{app_name}' has no entry point")
         return 1
     
-    # Build command - entry already includes cd and uv run
-    cmd = app["entry"]
+    # Parse entry command safely
+    entry = app["entry"]
+    if isinstance(entry, str):
+        # Backward compatibility - parse old shell command format
+        parts = entry.split(" && ")
+        if len(parts) == 2 and parts[0].startswith("cd "):
+            cwd = parts[0][3:].strip()
+            command = shlex.split(parts[1])
+        else:
+            cwd = None
+            command = shlex.split(entry)
+    else:
+        # New structured format
+        cwd = entry.get("cwd")
+        command = entry["command"][:]
+
+    # Safely append user arguments as list elements
     if args:
-        cmd += " " + " ".join(args)
-    
+        command.extend(args)
+
     # Clean environment to prevent VIRTUAL_ENV conflicts with uv
     env = os.environ.copy()
     env.pop('VIRTUAL_ENV', None)
-    
+
     try:
-        return subprocess.run(cmd, shell=True, env=env).returncode
+        return subprocess.run(command, cwd=cwd, env=env).returncode
     except KeyboardInterrupt:
         return 130
     except Exception as e:
