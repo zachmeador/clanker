@@ -678,23 +678,25 @@ def app_context(app: str, detail: str = "summary", tool: Optional[str] = None) -
                     "ended_at": merged.get("ended_at"),
                     "exit_code": merged.get("exit_code"),
                 })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to gather daemon info for app '{app}': {e}")
 
     # Data (db tables and vault roots)
     data_info: Dict[str, Any] = {}
     try:
         profile = Profile.current()
-        db = DB(profile)
-        owned = [row for row in db.list_app_tables() if row.get("app_name") == app]
-        data_info["db_tables"] = [row.get("table_name") for row in owned][:5]
+        # Get app's isolated database and list its tables
+        app_db = DB.for_app(app, profile)
+        data_info["db_tables"] = app_db.tables()[:5]
+
         vault_root = profile.vault_root / app
         if vault_root.exists():
             entries = [p.name for p in vault_root.iterdir() if p.is_dir()][:5]
         else:
             entries = []
         data_info["vault_roots"] = entries
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to gather storage info for app '{app}': {e}")
         data_info = {"db_tables": [], "vault_roots": []}
 
     # Build response

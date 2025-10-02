@@ -4,7 +4,6 @@ Provides brief, non-redundant context about apps - not tools.
 Pydantic-AI handles tool discovery automatically.
 """
 
-from typing import List
 from ..tool_registry import get_registry
 from ..daemon import DaemonManager, DaemonStatus
 from ..logger import get_logger
@@ -34,8 +33,8 @@ def get_app_hints() -> str:
                 hints.append(f"{app_name}: {manifest.summary} ({tool_count} tools available).")
         
         # System-level context
-        daemon_tools = [t for t in registry.list_tools() if 'daemon' in t]
-        if daemon_tools:
+        has_daemon_tools = any('daemon' in t for t in registry.list_tools())
+        if has_daemon_tools:
             try:
                 daemon_manager = DaemonManager()
                 daemons = daemon_manager.list_daemons()
@@ -46,7 +45,7 @@ def get_app_hints() -> str:
                     hints.append("System: No daemons running. Use daemon_start to launch background services.")
             except Exception as e:
                 logger.warning(f"Failed to get daemon status: {e}")
-                hints.append(f"System: {len(daemon_tools)} daemon management tools available.")
+                hints.append("System: Daemon management tools available.")
         
         return "\n".join(hints) if hints else "No app-specific context available."
         

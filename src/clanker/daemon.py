@@ -382,8 +382,8 @@ class DaemonManager:
         try:
             from .storage.schema import ensure_database_initialized
             ensure_database_initialized(self.profile)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to initialize database schema in DaemonManager: {e}")
     
     @contextmanager
     def _db_connection(self):
