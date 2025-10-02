@@ -8,7 +8,7 @@ Pydantic AI's message system provides conversation history management for agent 
 ```python
 from pydantic_ai import Agent
 
-agent = Agent('openai:gpt-4o', system_prompt='Be helpful')
+agent = Agent('openai:gpt-5', system_prompt='Be helpful')
 result = agent.run_sync('Tell me about Python')
 
 # Get all messages including system prompt
@@ -88,7 +88,7 @@ def filter_sensitive_data(messages: list[ModelMessage]) -> list[ModelMessage]:
 
 # Apply multiple processors
 agent = Agent(
-    'openai:gpt-4o',
+    'openai:gpt-5',
     history_processors=[filter_sensitive_data, limit_tokens_by_tier]
 )
 ```
@@ -100,7 +100,7 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
 
 # Summarizer using cheap model
-summarizer = Agent('openai:gpt-4o-mini', 
+summarizer = Agent('openai:gpt-5-mini',
     system_prompt='Summarize key points concisely')
 
 async def compress_history(messages: list[ModelMessage]) -> list[ModelMessage]:
@@ -118,7 +118,7 @@ async def compress_history(messages: list[ModelMessage]) -> list[ModelMessage]:
         return [summary_msg] + messages[-5:]
     return messages
 
-agent = Agent('openai:gpt-4o', history_processors=[compress_history])
+agent = Agent('openai:gpt-5', history_processors=[compress_history])
 ```
 
 ## Clanker Integration Examples
