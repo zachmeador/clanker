@@ -677,7 +677,7 @@ def app_context(app: str, detail: str = "summary", tool: Optional[str] = None) -
                     "exit_code": merged.get("exit_code"),
                 })
     except Exception as e:
-        logger.warning(f"Failed to gather daemon info for app '{app}': {e}")
+        logger.error(f"Failed to gather daemon info for app '{app}': {e}", exc_info=True)
 
     # Data (db tables and vault roots)
     data_info: Dict[str, Any] = {}
@@ -694,7 +694,7 @@ def app_context(app: str, detail: str = "summary", tool: Optional[str] = None) -
             entries = []
         data_info["vault_roots"] = entries
     except Exception as e:
-        logger.warning(f"Failed to gather storage info for app '{app}': {e}")
+        logger.error(f"Failed to gather storage info for app '{app}': {e}", exc_info=True)
         data_info = {"db_tables": [], "vault_roots": []}
 
     # Build response

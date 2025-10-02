@@ -1,5 +1,6 @@
 """High-level context templates for common scenarios."""
 
+import logging
 from pathlib import Path
 from typing import Optional, Dict
 
@@ -7,6 +8,8 @@ from .builder import ContextBuilder
 from .store import ContextStore
 from .hints import get_smart_hints
 from ..apps import discover as discover_apps
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -47,8 +50,8 @@ and should help with development tasks within this environment.
             if instructions.startswith("# "):
                 instructions = instructions[instructions.find("\n") + 1:]
             sections.append(instructions.strip())
-    except Exception:
-        pass  # Gracefully continue without INSTRUCTIONS.md
+    except Exception as e:
+        logger.debug(f"Failed to load INSTRUCTIONS.md for coding session: {e}")
     
     # Add a separator before dynamic content
     sections.append("---\n## Current System State")

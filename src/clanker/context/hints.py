@@ -44,13 +44,13 @@ def get_app_hints() -> str:
                 else:
                     hints.append("System: No daemons running. Use daemon_start to launch background services.")
             except Exception as e:
-                logger.warning(f"Failed to get daemon status: {e}")
+                logger.error(f"Failed to get daemon status: {e}", exc_info=True)
                 hints.append("System: Daemon management tools available.")
         
         return "\n".join(hints) if hints else "No app-specific context available."
-        
+
     except Exception as e:
-        logger.warning(f"Failed to generate app hints: {e}")
+        logger.error(f"Failed to generate app hints: {e}", exc_info=True)
         return "App context unavailable."
 
 

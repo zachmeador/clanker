@@ -1,7 +1,10 @@
 """Context storage and file management."""
 
+import logging
 from pathlib import Path
 from typing import Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class ContextStore:
@@ -54,5 +57,6 @@ class ContextStore:
         try:
             path.write_text(content)
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"Failed to write context file {path}: {e}", exc_info=True)
             return False

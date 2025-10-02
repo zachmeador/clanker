@@ -62,14 +62,14 @@ def _bootstrap_startup() -> None:
         from .storage.schema import ensure_database_initialized
         ensure_database_initialized()
     except Exception as e:
-        logger.warning(f"Failed to initialize database schema during startup: {e}")
+        logger.error(f"Failed to initialize database schema during startup: {e}", exc_info=True)
 
     try:
         # Start enabled daemons (idempotent; skips running ones)
         from .daemon import DaemonManager
         DaemonManager().start_enabled_daemons()
     except Exception as e:
-        logger.warning(f"Failed to start enabled daemons during startup: {e}")
+        logger.error(f"Failed to start enabled daemons during startup: {e}", exc_info=True)
 
 
 @app.callback()

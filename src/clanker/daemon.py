@@ -167,8 +167,8 @@ class ClankerDaemon:
             try:
                 # Close parent's reference; child keeps the FD
                 log_handle.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to close log handle: {e}")
             
             # Write PID file
             self.pid_file.write_text(str(self._process.pid))
@@ -211,7 +211,8 @@ class ClankerDaemon:
                     # Send SIGTERM to the whole process group
                     try:
                         os.killpg(pid, signal.SIGTERM)
-                    except Exception:
+                    except Exception as e:
+                        logger.debug(f"Failed to send SIGTERM to process group {pid}: {e}")
                         process.terminate()
                 else:
                     process.terminate()
@@ -226,22 +227,22 @@ class ClankerDaemon:
                     for child in process.children(recursive=True):
                         try:
                             child.kill()
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"Failed to kill child process {child.pid}: {e}")
                     if os.name != 'nt':
                         try:
                             os.killpg(pid, signal.SIGKILL)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"Failed to send SIGKILL to process group {pid}: {e}")
                     try:
                         process.kill()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Failed to kill process {pid}: {e}")
                     try:
                         rc = process.wait(timeout=5)
                         exit_code = rc
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Process {pid} still not responding after SIGKILL: {e}")
             except psutil.NoSuchProcess:
                 # Process already gone
                 pass
@@ -363,8 +364,8 @@ class ClankerDaemon:
         if self.pid_file.exists():
             try:
                 self.pid_file.unlink()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to remove PID file {self.pid_file}: {e}")
         self._mark_status(status, exit_code=exit_code)
 
 
