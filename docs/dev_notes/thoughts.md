@@ -99,6 +99,16 @@
 - user request: flashcard building from obsidian vault, other sources
 - a weather app that knows the *exact* weather i like and tells me to go outside.
     - later, someday, work on a messaging system
+- clanker "Assistant": smart goals/todos agent that only talks; all state updates happen via convo like "btw i finished that thing for bob last night" and it keeps the timelines straight
+    - DISCLAIMER: this is llm slop mimicking my style. need to refine this.
+    - pure chat intake, the agent interrogates for missing fields instead of making you click anything
+    - canonical objects: Goal, Workstream, Commitment, Reminder; each utterance gets parsed into one or more typed events against those tables
+    - vault carries the human-readable snapshots (markdown-ish status notes), db is the source of truth with current state + full event ledger
+    - every message we store as an Interaction row with pointers to the goals it touched, so the agent can rebuild context without vector spelunking
+    - response loop basics: agent grabs the current goal snapshot, figures out what your latest utterance changes, writes that change as an Event row, then replies in plain language summarizing what just shifted
+    - timeline adjustments live in the same event stream; "push that launch to next tuesday" just emits a Reschedule event and rehydrates downstream reminders
+    - assistant should auto-summarize at sane intervals (daily wrap, friday exec blurb) by querying the event ledger instead of rereading transcripts
+    - cross-app integration hook: expose a `assistant_summary(goal_id?)` export so other clanker apps can pull status or subscribe to churn
 - the actual recipe app i want:
     - would be agent-based, so clanker calling it would be a "subagent" i guess
     - stored in the vault, similar to obsidian's frontmatter format
