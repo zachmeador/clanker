@@ -182,7 +182,7 @@ class ClankerDaemon:
             
         except Exception as e:
             logger.error(f"Failed to start daemon {self.app_name}:{self.daemon_id}: {e}")
-            self._cleanup_files(status=DaemonStatus.STOPPED)
+            self._cleanup_files(status=DaemonStatus.CRASHED)
             return False
     
     def stop(self, timeout: int = 10) -> bool:
@@ -315,7 +315,7 @@ class ClankerDaemon:
                 'pid': pid,
                 'uptime': uptime,
                 'memory_mb': process.memory_info().rss / 1024 / 1024,
-                'cpu_percent': process.cpu_percent(interval=0.0)
+                'cpu_percent': process.cpu_percent(interval=0.1)
             }
             
         except psutil.NoSuchProcess:
