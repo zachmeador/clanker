@@ -122,8 +122,9 @@
         - storing available ingredients, purchase date, expiration date. the latter 2 nullable
 - rebuild of my old smdata project. finance data etl stuff basically. a few api providers for the source data. 
     - easy ways to call alerts, build various momentum metrics, more
-    - `clanker add bollinger bands to all of my market feed transforms`
     - tgcr coefficients, effr, other related one
+    - need to think about the most useful parts. 
+        - would like to quickly track a market pair feed, and/or calculated thing of that. like some chunk of the bollinger band of (silveroz/usd) / (btc/usd). in a chat just say i want to add a watch on that for, whatever.
 
 ### recipes
 
