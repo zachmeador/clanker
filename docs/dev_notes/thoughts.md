@@ -93,6 +93,15 @@
     - simple, not a framework.
 - convention for push notifications to a phone
 
+## improvements
+
+- philosophy of clanker, need to better explain both in the readme and prompts what clanker is. 
+
+## clanker feature ideas
+
+- stupid simple cli frontend boilerplate/conventions/library(?) with a few simple components. if textual didn't have bad opinions i guess i'd go with that.
+    - not 100% convinced that it's needed.
+
 ## app ideas
 
 - something like a fully automated obsidian vault with basic md publishing utilities. stores in vault, user could i guess point obsidian to that vault dir and use it that way too?
@@ -172,4 +181,3 @@ my takes on those takes:
 - git and git worktrees seem like a crucial aspect of clanker, would be the answer to the versioning (at least the codebase)
     - db/vault migrations: out of scope, rare enough to not care about right now
 - app modularity + easy install/manage ux will eventually be a thing but not important right now
-- if a testing convention was done in clanker it would be the most low
