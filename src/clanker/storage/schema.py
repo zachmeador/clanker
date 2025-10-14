@@ -9,6 +9,8 @@ from ..logger import get_logger
 
 logger = get_logger("schema")
 
+CURRENT_SCHEMA_VERSION = 1
+
 
 class DatabaseSchema:
     """Manages the core Clanker system database schema.
@@ -42,7 +44,6 @@ class DatabaseSchema:
                     applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
             
             # Cross-app vault file permissions (from storage/vault.py)
             conn.execute("""
@@ -81,26 +82,36 @@ class DatabaseSchema:
                 )
             """)
             
+            self._ensure_daemon_columns(conn)
+
             # Record current schema version
-            conn.execute("INSERT OR IGNORE INTO _schema_version (version) VALUES (1)")
-
-            # Ensure backward-compatible columns exist for _daemons
-            # Adds: exit_code (INTEGER), ended_at (TEXT)
-            try:
-                def _column_exists(table: str, column: str) -> bool:
-                    cur = conn.execute(f"PRAGMA table_info({table})")
-                    return any(row[1] == column for row in cur.fetchall())
-
-                if not _column_exists("_daemons", "exit_code"):
-                    conn.execute("ALTER TABLE _daemons ADD COLUMN exit_code INTEGER")
-                if not _column_exists("_daemons", "ended_at"):
-                    conn.execute("ALTER TABLE _daemons ADD COLUMN ended_at TEXT")
-            except Exception as e:
-                logger.warning(f"Schema column ensure failed: {e}")
+            conn.execute(
+                "INSERT OR REPLACE INTO _schema_version (version, applied_at) VALUES (?, CURRENT_TIMESTAMP)",
+                (CURRENT_SCHEMA_VERSION,),
+            )
 
             conn.commit()
 
         logger.info("Database schema initialized successfully")
+
+    def _ensure_daemon_columns(self, conn: sqlite3.Connection) -> None:
+        """Ensure optional daemon tracking columns exist."""
+
+        try:
+            def _column_exists(table: str, column: str) -> bool:
+                cur = conn.execute(f"PRAGMA table_info({table})")
+                return any(row[1] == column for row in cur.fetchall())
+
+            if not _column_exists("_daemons", "exit_code"):
+                conn.execute("ALTER TABLE _daemons ADD COLUMN exit_code INTEGER")
+            if not _column_exists("_daemons", "ended_at"):
+                conn.execute("ALTER TABLE _daemons ADD COLUMN ended_at TEXT")
+            if not _column_exists("_daemons", "failure_count"):
+                conn.execute("ALTER TABLE _daemons ADD COLUMN failure_count INTEGER DEFAULT 0")
+            if not _column_exists("_daemons", "last_failure_at"):
+                conn.execute("ALTER TABLE _daemons ADD COLUMN last_failure_at TEXT")
+        except Exception as e:
+            logger.warning(f"Schema column ensure failed: {e}")
     
     def get_schema_version(self) -> Optional[int]:
         """Get current schema version.
@@ -138,7 +149,7 @@ def init_database(profile: Optional[Profile] = None) -> None:
     schema.init_database()
 
 
-def ensure_database_initialized(profile: Optional[Profile] = None) -> None:
+def ensure_database_initialized(profile: Optional[Profile] = None, force: bool = False) -> None:
     """Ensure database schema exists and is up-to-date (idempotent).
 
     Always runs initialization logic which safely creates missing tables and
@@ -146,6 +157,24 @@ def ensure_database_initialized(profile: Optional[Profile] = None) -> None:
 
     Args:
         profile: Profile for database path (uses current if not provided)
+        force: Run full initialization even if schema version is current
     """
     schema = DatabaseSchema(profile)
-    schema.init_database()
+    if force:
+        schema.init_database()
+        return
+
+    current_version = schema.get_schema_version()
+    if current_version != CURRENT_SCHEMA_VERSION:
+        schema.init_database()
+        return
+
+    # Lightweight check to ensure optional columns exist without re-running
+    # full DDL each invocation.
+    try:
+        with sqlite3.connect(schema.db_path) as conn:
+            schema._ensure_daemon_columns(conn)
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Lightweight schema ensure failed, falling back to full init: {e}")
+        schema.init_database()
