@@ -5,7 +5,7 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 
 from .models import create_agent as create_pydantic_agent, ModelTier
-from .tools import create_clanker_toolset
+from .runtime import RuntimeContext, get_runtime_context
 from .logger import get_logger
 
 logger = get_logger("agent")
@@ -14,14 +14,20 @@ logger = get_logger("agent")
 class ClankerAgent:
     """Main clanker agent that handles natural language requests."""
 
-    def __init__(self, model_tier: ModelTier = ModelTier.MEDIUM):
+    def __init__(
+        self,
+        model_tier: ModelTier = ModelTier.MEDIUM,
+        runtime: Optional[RuntimeContext] = None,
+    ):
         """Initialize the clanker agent.
 
         Args:
             model_tier: The model tier to use for the agent
+            runtime: Optional runtime context providing shared services
         """
         self.model_tier = model_tier
         self.message_history = []  # Pydantic-ai message history for persistence
+        self.runtime = runtime or get_runtime_context()
 
         # Initialize the pydantic-ai agent with toolsets
         self._setup_agent()
@@ -29,14 +35,17 @@ class ClankerAgent:
     def _setup_agent(self) -> None:
         """Set up the pydantic-ai agent with system prompt and toolsets."""
         # Ensure database schema is initialized before creating tools
-        from .storage.schema import ensure_database_initialized
-        ensure_database_initialized()
+        self.runtime.ensure_database_initialized()
         logger.debug("Database schema initialized")
-        
+
+        # Ensure registry is populated with app exports before building tools
+        self.runtime.ensure_registry_discovered()
+
         instructions = self._get_instructions()
 
         # Create toolset with all core tools
-        toolset = create_clanker_toolset()
+        from .tools import create_clanker_toolset
+        toolset = create_clanker_toolset(runtime=self.runtime)
         logger.info("Created clanker toolset with core tools")
 
         self.agent = create_pydantic_agent(

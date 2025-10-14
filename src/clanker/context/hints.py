@@ -33,10 +33,11 @@ def get_app_hints() -> str:
                 hints.append(f"{app_name}: {manifest.summary} ({tool_count} tools available).")
         
         # System-level context
-        has_daemon_tools = any('daemon' in t for t in registry.list_tools())
+        has_daemon_tools = any('daemon' in t.lower() for t in registry.list_tools())
         if has_daemon_tools:
             try:
-                daemon_manager = DaemonManager()
+                from ..runtime import get_runtime_context
+                daemon_manager = DaemonManager(runtime=get_runtime_context())
                 daemons = daemon_manager.list_daemons()
                 running_count = len([d for d in daemons if d['status'] == DaemonStatus.RUNNING])
                 if running_count > 0:

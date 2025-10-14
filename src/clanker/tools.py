@@ -1,6 +1,8 @@
 """Unified tool system for Clanker apps."""
 
 import os
+import subprocess
+import sys
 import shlex
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -18,6 +20,15 @@ logger = get_logger("tools")
 def get_tool_display_info(tool_name: str) -> dict:
     """Get display metadata for any tool."""
     return get_registry().get_display_info(tool_name)
+
+
+def _build_coding_context(query: str) -> str:
+    """Build the full context string for coding tool launches."""
+    from .context import coding_session_context
+
+    # Use coding_session_context which is designed for CLI launches
+    # and doesn't modify the main INSTRUCTIONS.md file
+    return coding_session_context("coding", query)
 
 
 @tool(
@@ -58,62 +69,39 @@ def launch_coding_tool(tool: str, query: str = "") -> str:
 
         # Generate context for all tools using unified system
         try:
-            from .context import build_all_contexts
-            results = build_all_contexts(query)
-            
-            # Log which files were successfully generated
-            successful_files = [name for name, success in results.items() if success]
-            if successful_files:
-                logger.info(f"Generated context files: {', '.join(successful_files)}")
-            else:
-                logger.warning("No context files were successfully generated")
-            
-            # For the CLI launch, we'll read the content from INSTRUCTIONS.md  
-            # since that's our master file now
-            try:
-                with open("INSTRUCTIONS.md", "r") as f:
-                    full_context = f.read()
-            except FileNotFoundError:
-                # Fallback to basic context if INSTRUCTIONS.md doesn't exist
-                full_context = "# Clanker Development Session\n\nWorking with Clanker codebase."
-            
-            # Build the full query with context included
-            context_query = f"{full_context}\n\n---\n\n**User Request**: {query}" if query else full_context
-
+            context_query = _build_coding_context(query)
         except Exception as e:
             error_msg = f"❌ Failed to generate context: {e}"
             logger.error(f"Launch tool failed to generate context: {e}")
             return error_msg
 
-        # Launch the coding tool with proper TTY allocation
+        # If running in an interactive TTY, replace the process to ensure job control
         try:
-            logger.info(f"Launching {tool} session with pseudo-terminal")
+            if sys.stdin.isatty() and sys.stdout.isatty():
+                err = launch_coding_tool_cli(tool, query)
+                # If exec failed, return error string
+                return err or ""
 
-            # Clean environment for coding tools (remove API keys that might conflict)
-            api_keys_to_remove = [
+            # Non-interactive context: spawn a background process
+            logger.info(f"Launching {tool} session (non-blocking)")
+
+            env = dict(os.environ)
+            for key in (
                 'ANTHROPIC_API_KEY',
                 'OPENAI_API_KEY',
                 'GOOGLE_API_KEY',
-                'CLANKER_PROFILE',  # Remove Clanker-specific env vars
-                'CLANKER_REQUESTER_APP'
-            ]
+                'CLANKER_PROFILE',
+                'CLANKER_REQUESTER_APP',
+            ):
+                env.pop(key, None)
 
-            for key in api_keys_to_remove:
-                os.environ.pop(key, None)
-
-            # Build command arguments with full context
             if tool_lower == "gemini":
-                # Gemini uses -i flag for interactive mode with query
                 cmd_args = [cli_command, "-i", context_query]
             else:
-                # Claude, Cursor, and Codex accept query directly
                 cmd_args = [cli_command, context_query]
-            
-            # Use os.execvp to replace the current process with the tool
-            # This gives us a clean session with the modified environment
-            os.execvp(cli_command, cmd_args)
 
-            # This code never executes - process is replaced above
+            subprocess.Popen(cmd_args, env=env)
+            return f"✅ Launched {tool}"
 
         except FileNotFoundError:
             error_msg = f"❌ {tool} not found. Please install {tool} first."
@@ -121,7 +109,6 @@ def launch_coding_tool(tool: str, query: str = "") -> str:
                 error_msg += "\n💡 Visit: https://docs.anthropic.com/claude/docs/desktop-setup"
             logger.error(f"{tool} command not found")
             return error_msg
-
         except Exception as e:
             error_msg = f"❌ Failed to launch {tool}: {e}"
             logger.error(f"Launch tool failed to start {tool}: {e}")
@@ -131,6 +118,56 @@ def launch_coding_tool(tool: str, query: str = "") -> str:
         error_msg = f"❌ Launch tool failed: {e}"
         logger.error(f"Launch tool error: {e}")
         return error_msg
+
+
+def launch_coding_tool_cli(tool: str, query: str = "") -> Optional[str]:
+    """CLI-only launcher that replaces the current process with the tool.
+
+    Returns an error string on failure; does not return on success (exec).
+    """
+    logger.info(f"CLI launch requested for {tool} with query: {query}")
+    tool_commands = {
+        "claude": "claude",
+        "cursor": "cursor-agent",
+        "gemini": "gemini",
+        "codex": "codex",
+    }
+    tool_lower = tool.lower()
+    cli_command = tool_commands.get(tool_lower)
+    if not cli_command:
+        return f"❌ Unknown coding tool: {tool}. Supported tools: {', '.join(tool_commands.keys())}"
+
+    try:
+        context_query = _build_coding_context(query)
+    except Exception as e:
+        logger.error(f"Failed to generate context: {e}")
+        return f"❌ Failed to generate context: {e}"
+
+    # Build cleaned environment
+    env = dict(os.environ)
+    for key in (
+        'ANTHROPIC_API_KEY',
+        'OPENAI_API_KEY',
+        'GOOGLE_API_KEY',
+        'CLANKER_PROFILE',
+        'CLANKER_REQUESTER_APP',
+    ):
+        env.pop(key, None)
+
+    # Args
+    args = [cli_command, "-i", context_query] if tool_lower == "gemini" else [cli_command, context_query]
+    try:
+        # Replace process so the CLI session owns the TTY
+        os.execvpe(cli_command, args, env)
+    except FileNotFoundError:
+        msg = f"❌ {tool} not found. Please install {tool} first."
+        if tool_lower == "claude":
+            msg += "\n💡 Visit: https://docs.anthropic.com/claude/docs/desktop-setup"
+        logger.error(f"{tool} command not found")
+        return msg
+    except Exception as e:
+        logger.error(f"Failed to exec {tool}: {e}")
+        return f"❌ Failed to launch {tool}: {e}"
 
 
 def _discover_app_metadata() -> Dict[str, Dict[str, Any]]:
@@ -178,7 +215,8 @@ def daemon_list() -> str:
         Formatted string showing daemon status information
     """
     try:
-        manager = DaemonManager()
+        from .runtime import get_runtime_context
+        manager = DaemonManager(runtime=get_runtime_context())
         daemons = manager.list_daemons()
         
         if not daemons:
@@ -253,7 +291,8 @@ def daemon_start(app_name: str, daemon_id: str) -> str:
         base_command = shlex.split(command_template)
         
         # Create daemon and start it
-        manager = DaemonManager()
+        from .runtime import get_runtime_context
+        manager = DaemonManager(runtime=get_runtime_context())
         daemon = manager.get_daemon(app_name, daemon_id)
         
         if daemon.is_running():
@@ -290,7 +329,8 @@ def daemon_stop(app_name: str, daemon_id: str) -> str:
         Status message about the stop operation
     """
     try:
-        manager = DaemonManager()
+        from .runtime import get_runtime_context
+        manager = DaemonManager(runtime=get_runtime_context())
         daemon = manager.get_daemon(app_name, daemon_id)
         
         if not daemon.is_running():
@@ -325,7 +365,8 @@ def daemon_logs(app_name: str, daemon_id: str, lines: int = 50) -> str:
         Recent log output
     """
     try:
-        manager = DaemonManager()
+        from .runtime import get_runtime_context
+        manager = DaemonManager(runtime=get_runtime_context())
         daemon = manager.get_daemon(app_name, daemon_id)
         
         log_lines = daemon.get_logs(lines)
@@ -352,7 +393,8 @@ def daemon_logs(app_name: str, daemon_id: str, lines: int = 50) -> str:
 def daemon_status(app_name: str, daemon_id: str) -> str:
     """Show status for a specific daemon."""
     try:
-        manager = DaemonManager()
+        from .runtime import get_runtime_context
+        manager = DaemonManager(runtime=get_runtime_context())
         daemon = manager.get_daemon(app_name, daemon_id)
         st = daemon.get_status()
         app_daemon = f"{st['app_name']}:{st['daemon_id']}"
@@ -392,7 +434,8 @@ def daemon_restart(app_name: str, daemon_id: str) -> str:
 def daemon_enable_autostart(app_name: str, daemon_id: str) -> str:
     """Enable autostart for a daemon."""
     try:
-        manager = DaemonManager()
+        from .runtime import get_runtime_context
+        manager = DaemonManager(runtime=get_runtime_context())
         manager.set_autostart(app_name, daemon_id, True)
         return f"✅ Enabled autostart for {app_name}:{daemon_id}"
     except Exception as e:
@@ -408,7 +451,8 @@ def daemon_enable_autostart(app_name: str, daemon_id: str) -> str:
 def daemon_disable_autostart(app_name: str, daemon_id: str) -> str:
     """Disable autostart for a daemon."""
     try:
-        manager = DaemonManager()
+        from .runtime import get_runtime_context
+        manager = DaemonManager(runtime=get_runtime_context())
         manager.set_autostart(app_name, daemon_id, False)
         return f"✅ Disabled autostart for {app_name}:{daemon_id}"
     except Exception as e:
@@ -424,7 +468,15 @@ def daemon_disable_autostart(app_name: str, daemon_id: str) -> str:
 def daemon_start_enabled() -> str:
     """Start all daemons marked for autostart."""
     try:
-        manager = DaemonManager()
+        from .runtime import get_runtime_context
+        manager = DaemonManager(runtime=get_runtime_context())
+        # Clean stale rows first to avoid false RUNNING states
+        try:
+            cleaned = manager.cleanup_stale_entries()
+            if cleaned:
+                logger.info(f"Cleaned {cleaned} stale daemon entries before autostart")
+        except Exception as e:
+            logger.warning(f"Autostart cleanup failed: {e}")
         results = manager.start_enabled_daemons()
         if not results:
             return "No enabled daemons to start."
@@ -454,7 +506,8 @@ def daemon_autostart_list() -> str:
     """List daemons with autostart enabled, and whether running."""
     try:
         import sqlite3
-        manager = DaemonManager()
+        from .runtime import get_runtime_context
+        manager = DaemonManager(runtime=get_runtime_context())
         # Gather enabled rows from DB
         enabled = []
         with sqlite3.connect(manager.profile.db_path) as conn:
@@ -497,7 +550,8 @@ def daemon_kill_all() -> str:
         Status message about the kill operation
     """
     try:
-        manager = DaemonManager()
+        from .runtime import get_runtime_context
+        manager = DaemonManager(runtime=get_runtime_context())
         results = manager.stop_all_daemons()
         
         if not results:
@@ -525,18 +579,51 @@ def daemon_kill_all() -> str:
 
 def discover_daemon_configs() -> Dict[str, Dict[str, str]]:
     """Discover daemon configurations from all apps.
-    
+
+    Checks both pyproject.toml manifests and dedicated daemons.toml files.
+
     Returns:
         Dict mapping app_name -> {daemon_id: command_template}
     """
+    import tomllib
+    from pathlib import Path
+
     registry = get_registry()
+    registry.discover_apps()  # Ensure apps are discovered
     configs = {}
-    
+
     for app_name in registry.list_apps():
+        app_configs = {}
+
+        # First check pyproject.toml manifest (existing behavior)
         manifest = registry.get_app_manifest(app_name)
         if manifest and manifest.daemons:
-            configs[app_name] = manifest.daemons
-            
+            app_configs.update(manifest.daemons)
+
+        # Then check for dedicated daemons.toml file
+        try:
+            app_dir = Path(f"apps/{app_name}")
+            daemons_toml = app_dir / "daemons.toml"
+
+            if daemons_toml.exists():
+                with open(daemons_toml, "rb") as f:
+                    daemons_data = tomllib.load(f)
+
+                # Parse daemons.toml structure
+                if "daemons" in daemons_data:
+                    for daemon_id, daemon_config in daemons_data["daemons"].items():
+                        if "command" in daemon_config:
+                            app_configs[daemon_id] = daemon_config["command"]
+
+        except Exception as e:
+            # Log but don't fail if daemons.toml is malformed
+            from .logger import get_logger
+            logger = get_logger("tools")
+            logger.warning(f"Failed to parse daemons.toml for {app_name}: {e}")
+
+        if app_configs:
+            configs[app_name] = app_configs
+
     return configs
 
 
@@ -560,41 +647,48 @@ def discover_cli_exports() -> Dict[str, Dict[str, str]]:
 
 
 
-def create_clanker_toolset() -> FunctionToolset:
+def create_clanker_toolset(runtime=None) -> FunctionToolset:
     """
     Create the main clanker toolset with all CLI export tools and core tools.
 
     This creates tools from all apps that have [tool.clanker.exports] in their pyproject.toml,
     plus core Clanker tools like launch_coding_tool.
     """
-    registry = get_registry()
+    from .runtime import RuntimeContext, get_runtime_context
+
+    runtime_ctx: RuntimeContext = runtime or get_runtime_context()
+    registry = runtime_ctx.registry
+
+    # Discover and register all apps (once per runtime)
+    runtime_ctx.ensure_registry_discovered()
     
-    # Discover and register all apps
-    registry.discover_apps()
-    
-    # Register core tools
-    core_tools = [
-        launch_coding_tool,
-        daemon_list,
-        daemon_start,
-        daemon_stop,
-        daemon_logs,
-        daemon_kill_all,
-        daemon_status,
-        daemon_restart,
-        daemon_enable_autostart,
-        daemon_disable_autostart,
-        daemon_start_enabled,
-        daemon_autostart_list,
-        app_context
-    ]
-    
-    for tool_func in core_tools:
-        if hasattr(tool_func, '__tool_metadata__'):
-            registry.register(tool_func, tool_func.__tool_metadata__)
-        else:
-            # Fallback for tools without metadata
-            logger.warning(f"Core tool {tool_func.__name__} missing metadata decorator")
+    # Register core tools once per runtime context
+    if runtime_ctx.core_tools_already_registered():
+        pass
+    else:
+        core_tools = [
+            launch_coding_tool,
+            daemon_list,
+            daemon_start,
+            daemon_stop,
+            daemon_logs,
+            daemon_kill_all,
+            daemon_status,
+            daemon_restart,
+            daemon_enable_autostart,
+            daemon_disable_autostart,
+            daemon_start_enabled,
+            daemon_autostart_list,
+            app_context
+        ]
+
+        for tool_func in core_tools:
+            if hasattr(tool_func, '__tool_metadata__'):
+                registry.register(tool_func, tool_func.__tool_metadata__)
+            else:
+                # Fallback for tools without metadata
+                logger.warning(f"Core tool {tool_func.__name__} missing metadata decorator")
+        runtime_ctx.mark_core_tools_registered()
     
     # Create pydantic toolset from registry
     toolset = FunctionToolset()
@@ -661,8 +755,9 @@ def app_context(app: str, detail: str = "summary", tool: Optional[str] = None) -
     try:
         cfgs = discover_daemon_configs()
         if app in cfgs:
-            manager = DaemonManager()
-            listed = { (d['app_name'], d['daemon_id']): d for d in manager.list_daemons() }
+            from .runtime import get_runtime_context
+            manager = DaemonManager(runtime=get_runtime_context())
+            listed = {(d['app_name'], d['daemon_id']): d for d in manager.list_daemons()}
             for did, cmd in cfgs[app].items():
                 status = manager.get_daemon(app, did).get_status()
                 merged = listed.get((app, did), {})

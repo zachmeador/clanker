@@ -97,23 +97,19 @@ To get started, you'll need to configure API keys and optionally install coding 
         table = Table(show_header=True, header_style="bold blue")
         table.add_column("Provider", style="cyan")
         table.add_column("Recommended", style="green")
-        table.add_column("Models", style="dim")
         table.add_column("Get API Key", style="blue")
 
         # Priority recommendations
         table.add_row(
             "Anthropic", "✅ Recommended",
-            "Claude Opus, Sonnet, Haiku",
             "https://console.anthropic.com/"
         )
         table.add_row(
             "OpenAI", "✅ Recommended",
-            "GPT-5, GPT-5 Mini",
             "https://platform.openai.com/"
         )
         table.add_row(
             "Google", "Optional",
-            "Gemini Pro, Flash",
             "https://aistudio.google.com/"
         )
 

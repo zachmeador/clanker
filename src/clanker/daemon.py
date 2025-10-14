@@ -4,17 +4,21 @@ import os
 import signal
 import subprocess
 import sqlite3
+import json
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 import psutil
 
 from .profile import Profile
+from .runtime import RuntimeContext, get_runtime_context
 from .logger import get_logger
 
 logger = get_logger("daemon")
+
+FAILURE_BACKOFF_SCHEDULE = (5, 30, 120, 600)
 
 
 class DaemonStatus:
@@ -33,7 +37,13 @@ class ClankerDaemon:
     for background processes in Clanker apps.
     """
     
-    def __init__(self, app_name: str, daemon_id: str, profile: Optional[Profile] = None):
+    def __init__(
+        self,
+        app_name: str,
+        daemon_id: str,
+        profile: Optional[Profile] = None,
+        runtime: Optional[RuntimeContext] = None,
+    ):
         """Initialize daemon management.
         
         Args:
@@ -43,86 +53,99 @@ class ClankerDaemon:
         """
         self.app_name = app_name
         self.daemon_id = daemon_id
-        self.profile = profile or Profile.current()
+        self.runtime = runtime or get_runtime_context()
+        self.profile = profile or self.runtime.profile
         
         self.pid_file = self.profile.daemons_dir / f"{app_name}_{daemon_id}.pid"
         self.log_file = self.profile.app_log_file(f"{app_name}_daemon_{daemon_id}")
-        
+        self.state_file = self.profile.daemons_dir / f"{app_name}_{daemon_id}.json"
+
         self._process = None
         self._should_stop = False
-        
+
+    def _load_state(self) -> dict:
+        """Load daemon state from JSON file."""
+        if self.state_file.exists():
+            try:
+                return json.loads(self.state_file.read_text())
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning(f"Failed to load state from {self.state_file}: {e}")
+        return {
+            "status": DaemonStatus.STOPPED,
+            "pid": None,
+            "command": None,
+            "started_at": None,
+            "last_heartbeat": None,
+            "exit_code": None,
+            "ended_at": None,
+            "failure_count": 0,
+            "last_failure_at": None
+        }
+
+    def _save_state(self, state: dict) -> None:
+        """Save daemon state to JSON file."""
+        self.state_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.state_file.write_text(json.dumps(state, indent=2))
+        except OSError as e:
+            logger.error(f"Failed to save state to {self.state_file}: {e}")
+
     def _register_daemon(self, pid: int, command: str) -> None:
-        """Register daemon in the database."""
-        with sqlite3.connect(self.profile.db_path) as conn:
-            conn.execute("""
-                INSERT OR REPLACE INTO _daemons 
-                (app_name, daemon_id, pid, status, command, started_at, last_heartbeat)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                self.app_name,
-                self.daemon_id, 
-                pid,
-                DaemonStatus.RUNNING,
-                command,
-                datetime.now().isoformat(),
-                datetime.now().isoformat()
-            ))
-            conn.commit()
-            
-    def _mark_status(self, status: str, exit_code: Optional[int] = None) -> None:
-        """Persist daemon status without removing row.
+        """Register daemon in state file."""
+        state = self._load_state()
+        now = datetime.now().isoformat()
+        state.update({
+            "pid": pid,
+            "status": DaemonStatus.RUNNING,
+            "command": command,
+            "started_at": now,
+            "last_heartbeat": now,
+            "failure_count": 0,
+            "last_failure_at": None
+        })
+        self._save_state(state)
+
+    def _mark_status(self, status: str, exit_code: Optional[int] = None, *, reset_failures: bool = False) -> None:
+        """Persist daemon status to state file.
 
         Sets pid to NULL when stopped/crashed and records ended_at when terminal.
         """
-        with sqlite3.connect(self.profile.db_path) as conn:
-            ended_at = datetime.now().isoformat() if status in (DaemonStatus.STOPPED, DaemonStatus.CRASHED) else None
-            # Ensure row exists
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO _daemons (app_name, daemon_id, pid, status, command, started_at, last_heartbeat)
-                VALUES (?, ?, NULL, ?, NULL, NULL, ?)
-                """,
-                (self.app_name, self.daemon_id, status, datetime.now().isoformat())
-            )
-            # Update fields
-            conn.execute(
-                """
-                UPDATE _daemons
-                SET status = ?, last_heartbeat = ?, pid = CASE WHEN ? IS NULL THEN pid ELSE NULL END,
-                    ended_at = COALESCE(?, ended_at), exit_code = COALESCE(?, exit_code)
-                WHERE app_name = ? AND daemon_id = ?
-                """,
-                (
-                    status,
-                    datetime.now().isoformat(),
-                    1 if status in (DaemonStatus.STOPPED, DaemonStatus.CRASHED) else None,
-                    ended_at,
-                    exit_code,
-                    self.app_name,
-                    self.daemon_id,
-                ),
-            )
-            conn.commit()
+        state = self._load_state()
+        now = datetime.now().isoformat()
+        ended_at = now if status in (DaemonStatus.STOPPED, DaemonStatus.CRASHED) else state.get("ended_at")
+
+        # Update state
+        clear_pid = status in (DaemonStatus.STOPPED, DaemonStatus.CRASHED)
+        state.update({
+            "status": status,
+            "last_heartbeat": now,
+            "pid": None if clear_pid else state.get("pid"),
+            "ended_at": ended_at,
+            "exit_code": exit_code
+        })
+
+        if status == DaemonStatus.CRASHED:
+            state["failure_count"] = state.get("failure_count", 0) + 1
+            state["last_failure_at"] = now
+
+        if reset_failures:
+            state["failure_count"] = 0
+            state["last_failure_at"] = None
+
+        self._save_state(state)
             
     def _update_status(self, status: str) -> None:
-        """Update daemon status in database."""
-        with sqlite3.connect(self.profile.db_path) as conn:
-            conn.execute("""
-                UPDATE _daemons 
-                SET status = ?, last_heartbeat = ?
-                WHERE app_name = ? AND daemon_id = ?
-            """, (status, datetime.now().isoformat(), self.app_name, self.daemon_id))
-            conn.commit()
-            
+        """Update daemon status in state file."""
+        state = self._load_state()
+        state["status"] = status
+        state["last_heartbeat"] = datetime.now().isoformat()
+        self._save_state(state)
+
     def _heartbeat(self) -> None:
         """Update last heartbeat timestamp."""
-        with sqlite3.connect(self.profile.db_path) as conn:
-            conn.execute("""
-                UPDATE _daemons 
-                SET last_heartbeat = ?
-                WHERE app_name = ? AND daemon_id = ?
-            """, (datetime.now().isoformat(), self.app_name, self.daemon_id))
-            conn.commit()
+        state = self._load_state()
+        state["last_heartbeat"] = datetime.now().isoformat()
+        self._save_state(state)
     
     def start(self, command: List[str], cwd: Optional[Path] = None) -> bool:
         """Start the daemon process.
@@ -210,9 +233,10 @@ class ClankerDaemon:
                 if os.name != 'nt':
                     # Send SIGTERM to the whole process group
                     try:
-                        os.killpg(pid, signal.SIGTERM)
+                        pgid = os.getpgid(pid)
+                        os.killpg(pgid, signal.SIGTERM)
                     except Exception as e:
-                        logger.debug(f"Failed to send SIGTERM to process group {pid}: {e}")
+                        logger.debug(f"Failed to send SIGTERM to process group of {pid}: {e}")
                         process.terminate()
                 else:
                     process.terminate()
@@ -231,9 +255,10 @@ class ClankerDaemon:
                             logger.debug(f"Failed to kill child process {child.pid}: {e}")
                     if os.name != 'nt':
                         try:
-                            os.killpg(pid, signal.SIGKILL)
+                            pgid = os.getpgid(pid)
+                            os.killpg(pgid, signal.SIGKILL)
                         except Exception as e:
-                            logger.debug(f"Failed to send SIGKILL to process group {pid}: {e}")
+                            logger.debug(f"Failed to send SIGKILL to process group of {pid}: {e}")
                     try:
                         process.kill()
                     except Exception as e:
@@ -247,7 +272,7 @@ class ClankerDaemon:
                 # Process already gone
                 pass
             
-            self._cleanup_files(status=DaemonStatus.STOPPED, exit_code=exit_code)
+            self._cleanup_files(status=DaemonStatus.STOPPED, exit_code=exit_code, reset_failures=True)
             logger.info(f"Stopped daemon {self.app_name}:{self.daemon_id}")
             return True
             
@@ -257,21 +282,23 @@ class ClankerDaemon:
     
     def get_pid(self) -> Optional[int]:
         """Get the PID of the running daemon.
-        
+
         Returns:
             PID if daemon is running, None otherwise
         """
-        if not self.pid_file.exists():
+        state = self._load_state()
+        pid = state.get("pid")
+
+        if not pid:
             return None
-            
+
         try:
-            pid = int(self.pid_file.read_text().strip())
             # Verify process is actually running
             psutil.Process(pid)
             return pid
-        except (ValueError, psutil.NoSuchProcess):
-            # PID file is stale
-            self._cleanup_files(status=DaemonStatus.CRASHED)
+        except psutil.NoSuchProcess:
+            # Process is not running, update state
+            self._mark_status(DaemonStatus.CRASHED)
             return None
     
     def is_running(self) -> bool:
@@ -284,51 +311,64 @@ class ClankerDaemon:
     
     def get_status(self) -> Dict[str, Any]:
         """Get detailed daemon status information.
-        
+
         Returns:
             Dictionary with status, PID, uptime, etc.
         """
-        pid = self.get_pid()
-        
+        state = self._load_state()
+        pid = state.get("pid")
+
         if not pid:
             return {
                 'app_name': self.app_name,
                 'daemon_id': self.daemon_id,
-                'status': DaemonStatus.STOPPED,
+                'status': state.get("status", DaemonStatus.STOPPED),
                 'pid': None,
-                'uptime': None,
-                'memory_mb': None,
-                'cpu_percent': None
+                'command': state.get("command"),
+                'started_at': state.get("started_at"),
+                'last_heartbeat': state.get("last_heartbeat"),
+                'exit_code': state.get("exit_code"),
+                'ended_at': state.get("ended_at"),
+                'failure_count': state.get("failure_count", 0)
             }
-            
+
         try:
             process = psutil.Process(pid)
             create_time = process.create_time()
             uptime = time.time() - create_time
             # Update heartbeat whenever we positively observe the process
             self._heartbeat()
-            
+
             return {
                 'app_name': self.app_name,
                 'daemon_id': self.daemon_id,
                 'status': DaemonStatus.RUNNING,
                 'pid': pid,
+                'command': state.get("command"),
+                'started_at': state.get("started_at"),
+                'last_heartbeat': state.get("last_heartbeat"),
                 'uptime': uptime,
                 'memory_mb': process.memory_info().rss / 1024 / 1024,
-                'cpu_percent': process.cpu_percent(interval=0.1)
+                'cpu_percent': process.cpu_percent(interval=0.1),
+                'exit_code': state.get("exit_code"),
+                'ended_at': state.get("ended_at"),
+                'failure_count': state.get("failure_count", 0)
             }
-            
+
         except psutil.NoSuchProcess:
-            # Mark as crashed and clean pid file
-            self._cleanup_files(status=DaemonStatus.CRASHED)
+            # Mark as crashed
+            self._mark_status(DaemonStatus.CRASHED)
             return {
                 'app_name': self.app_name,
                 'daemon_id': self.daemon_id,
                 'status': DaemonStatus.CRASHED,
                 'pid': None,
-                'uptime': None,
-                'memory_mb': None,
-                'cpu_percent': None
+                'command': state.get("command"),
+                'started_at': state.get("started_at"),
+                'last_heartbeat': state.get("last_heartbeat"),
+                'exit_code': state.get("exit_code"),
+                'ended_at': datetime.now().isoformat(),
+                'failure_count': state.get("failure_count", 0) + 1
             }
     
     def get_logs(self, lines: int = 50) -> List[str]:
@@ -359,95 +399,72 @@ class ClankerDaemon:
             logger.error(f"Failed to read logs for {self.app_name}:{self.daemon_id}: {e}")
             return []
     
-    def _cleanup_files(self, status: str = DaemonStatus.STOPPED, exit_code: Optional[int] = None) -> None:
-        """Clean up PID file and persist terminal status without deleting DB row."""
+    def _cleanup_files(
+        self,
+        status: str = DaemonStatus.STOPPED,
+        exit_code: Optional[int] = None,
+        *,
+        reset_failures: bool = False,
+    ) -> None:
+        """Clean up PID file and persist terminal status."""
         if self.pid_file.exists():
             try:
                 self.pid_file.unlink()
             except Exception as e:
                 logger.debug(f"Failed to remove PID file {self.pid_file}: {e}")
-        self._mark_status(status, exit_code=exit_code)
+        self._mark_status(status, exit_code=exit_code, reset_failures=reset_failures)
 
 
 class DaemonManager:
     """Manager for all Clanker daemons."""
-    
-    def __init__(self, profile: Optional[Profile] = None):
+
+    def __init__(self, profile: Optional[Profile] = None, runtime: Optional[RuntimeContext] = None):
         """Initialize daemon manager.
-        
+
         Args:
             profile: Profile for storage (uses current if not provided)
         """
-        self.profile = profile or Profile.current()
-        # Ensure schema exists when manager is used standalone (outside agent)
-        try:
-            from .storage.schema import ensure_database_initialized
-            ensure_database_initialized(self.profile)
-        except Exception as e:
-            logger.warning(f"Failed to initialize database schema in DaemonManager: {e}")
-    
-    @contextmanager
-    def _db_connection(self):
-        """Get database connection."""
-        conn = sqlite3.connect(self.profile.db_path)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-        finally:
-            conn.close()
+        self.runtime = runtime or get_runtime_context()
+        self.profile = profile or self.runtime.profile
     
     def list_daemons(self) -> List[Dict[str, Any]]:
         """List all registered daemons with status.
-        
+
         Returns:
             List of daemon status dictionaries
         """
         daemons: List[Dict[str, Any]] = []
 
-        # Discover configured daemons from apps
-        configs: Dict[str, Dict[str, str]] = {}
-        apps_dir = Path("./apps")
-        if apps_dir.exists():
-            for item in apps_dir.iterdir():
-                if not item.is_dir() or item.name.startswith(('_', '.')):
-                    continue
-                pyproject_path = item / "pyproject.toml"
-                if not pyproject_path.exists():
-                    continue
-                try:
-                    import tomllib
-                    with open(pyproject_path, 'rb') as f:
-                        pyproject = tomllib.load(f)
-                    daemon_cfg = pyproject.get("tool", {}).get("clanker", {}).get("daemons", {})
-                    if daemon_cfg:
-                        configs[item.name] = dict(daemon_cfg)
-                except Exception:
-                    continue
+        # Discover configured daemons from registry manifests
+        try:
+            from .tools import discover_daemon_configs
+            configs: Dict[str, Dict[str, str]] = discover_daemon_configs()
+        except Exception:
+            configs = {}
 
-        # Read DB rows for additional metadata
-        db_rows: Dict[tuple, sqlite3.Row] = {}
-        with self._db_connection() as conn:
-            cur = conn.execute(
-                "SELECT app_name, daemon_id, pid, status, command, started_at, last_heartbeat, exit_code, ended_at FROM _daemons"
-            )
-            for row in cur.fetchall():
-                db_rows[(row['app_name'], row['daemon_id'])] = row
+        # Find all daemon state files
+        daemon_state_files = []
+        if self.profile.daemons_dir.exists():
+            for state_file in self.profile.daemons_dir.glob("*_*.json"):
+                # Parse app_name_daemon_id.json format
+                filename = state_file.stem  # Remove .json extension
+                if '_' in filename:
+                    parts = filename.split('_', 1)
+                    if len(parts) == 2:
+                        app_name, daemon_id = parts
+                        daemon_state_files.append((app_name, daemon_id, state_file))
 
-        # Merge discovered configs and DB rows
-        keys = set(db_rows.keys()) | set(
-            (app, daemon_id) for app, cfg in configs.items() for daemon_id in cfg.keys()
-        )
+        # Also check configured daemons that might not have state files yet
+        for app_name, app_configs in configs.items():
+            for daemon_id in app_configs.keys():
+                if not any((app_name, daemon_id) == (a, d) for a, d, _ in daemon_state_files):
+                    daemon_state_files.append((app_name, daemon_id, None))
 
-        for app_name, daemon_id in sorted(keys):
+        for app_name, daemon_id, state_file in sorted(daemon_state_files):
             daemon = self.get_daemon(app_name, daemon_id)
             status = daemon.get_status()
-            row = db_rows.get((app_name, daemon_id))
             status.update({
-                'command': (configs.get(app_name, {}) or {}).get(daemon_id) or (row['command'] if row else None),
-                'started_at': row['started_at'] if row else None,
-                'last_heartbeat': row['last_heartbeat'] if row else None,
-                'exit_code': row['exit_code'] if row else None,
-                'ended_at': row['ended_at'] if row else None,
+                'command': (configs.get(app_name, {}) or {}).get(daemon_id) or status.get('command'),
             })
             daemons.append(status)
 
@@ -463,7 +480,7 @@ class DaemonManager:
         Returns:
             ClankerDaemon instance
         """
-        return ClankerDaemon(app_name, daemon_id, self.profile)
+        return ClankerDaemon(app_name, daemon_id, self.profile, runtime=self.runtime)
     
     def stop_all_daemons(self) -> Dict[str, bool]:
         """Stop all running daemons.
@@ -482,103 +499,140 @@ class DaemonManager:
         return results
     
     def cleanup_stale_entries(self) -> int:
-        """Remove database entries for daemons that are no longer running.
-        
+        """Clean up state files for daemons that are no longer running.
+
         Returns:
             Number of entries cleaned up
         """
         cleaned = 0
 
-        with self._db_connection() as conn:
-            cursor = conn.execute("SELECT app_name, daemon_id, pid FROM _daemons")
+        if not self.profile.daemons_dir.exists():
+            return cleaned
 
-            for row in cursor.fetchall():
+        for state_file in self.profile.daemons_dir.glob("*_*.json"):
+            try:
+                # Parse app_name_daemon_id.json format
+                filename = state_file.stem
+                if '_' in filename:
+                    parts = filename.split('_', 1)
+                    if len(parts) == 2:
+                        app_name, daemon_id = parts
+
+                        # Load state and check if process is still running
+                        state = json.loads(state_file.read_text())
+                        pid = state.get('pid')
+
+                        if pid:
+                            try:
+                                psutil.Process(pid)
+                            except psutil.NoSuchProcess:
+                                # Mark as crashed
+                                state['status'] = DaemonStatus.CRASHED
+                                state['pid'] = None
+                                state['ended_at'] = datetime.now().isoformat()
+                                state['last_heartbeat'] = datetime.now().isoformat()
+                                state['failure_count'] = state.get('failure_count', 0) + 1
+                                state_file.write_text(json.dumps(state, indent=2))
+                                cleaned += 1
+
+            except (json.JSONDecodeError, OSError):
+                # If we can't parse the state file, remove it
                 try:
-                    if row['pid']:
-                        psutil.Process(row['pid'])
-                except psutil.NoSuchProcess:
-                    # Mark as crashed and clear pid instead of deleting the row
-                    conn.execute(
-                        """
-                        UPDATE _daemons
-                        SET status = ?, pid = NULL, ended_at = ?, last_heartbeat = ?
-                        WHERE app_name = ? AND daemon_id = ?
-                        """,
-                        (
-                            DaemonStatus.CRASHED,
-                            datetime.now().isoformat(),
-                            datetime.now().isoformat(),
-                            row['app_name'],
-                            row['daemon_id'],
-                        ),
-                    )
+                    state_file.unlink()
                     cleaned += 1
-
-            conn.commit()
+                except OSError:
+                    pass
 
         return cleaned
 
     # Autostart controls
     def set_autostart(self, app_name: str, daemon_id: str, enabled: bool) -> None:
-        with self._db_connection() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO _daemon_startup (app_name, daemon_id, enabled) VALUES (?, ?, ?)",
-                (app_name, daemon_id, 1 if enabled else 0),
-            )
-            conn.commit()
+        """Set autostart configuration for a daemon."""
+        autostart_file = self.profile.daemons_dir / f"{app_name}_{daemon_id}_autostart.json"
+        autostart_file.parent.mkdir(parents=True, exist_ok=True)
+        autostart_file.write_text(json.dumps({"enabled": enabled}))
 
     def get_autostart(self, app_name: str, daemon_id: str) -> bool:
-        with self._db_connection() as conn:
-            cur = conn.execute(
-                "SELECT enabled FROM _daemon_startup WHERE app_name = ? AND daemon_id = ?",
-                (app_name, daemon_id),
-            )
-            row = cur.fetchone()
-            return bool(row['enabled']) if row else False
+        """Get autostart configuration for a daemon."""
+        autostart_file = self.profile.daemons_dir / f"{app_name}_{daemon_id}_autostart.json"
+        if autostart_file.exists():
+            try:
+                data = json.loads(autostart_file.read_text())
+                return data.get("enabled", False)
+            except (json.JSONDecodeError, OSError):
+                pass
+        return False
+
+    def _next_restart_time(self, failure_count: int, last_failure_at: Optional[str]) -> Optional[datetime]:
+        if failure_count <= 0 or not last_failure_at:
+            return None
+        try:
+            last = datetime.fromisoformat(last_failure_at)
+        except ValueError:
+            return None
+        index = min(failure_count - 1, len(FAILURE_BACKOFF_SCHEDULE) - 1)
+        delay_seconds = FAILURE_BACKOFF_SCHEDULE[index]
+        return last + timedelta(seconds=delay_seconds)
 
     def start_enabled_daemons(self) -> Dict[str, bool]:
-        """Start all daemons marked enabled in _daemon_startup."""
+        """Start all daemons marked enabled for autostart."""
         results: Dict[str, bool] = {}
 
-        # Discover configs
-        configs: Dict[str, Dict[str, str]] = {}
-        apps_dir = Path("./apps")
-        if apps_dir.exists():
-            for item in apps_dir.iterdir():
-                if not item.is_dir() or item.name.startswith(('_', '.')):
-                    continue
-                pyproject_path = item / "pyproject.toml"
-                if not pyproject_path.exists():
-                    continue
+        # Discover configs from registry manifests
+        try:
+            from .tools import discover_daemon_configs
+            configs: Dict[str, Dict[str, str]] = discover_daemon_configs()
+        except Exception:
+            configs = {}
+
+        # Find all autostart configuration files
+        autostart_configs = []
+        if self.profile.daemons_dir.exists():
+            for autostart_file in self.profile.daemons_dir.glob("*_*_autostart.json"):
                 try:
-                    import tomllib
-                    with open(pyproject_path, 'rb') as f:
-                        pyproject = tomllib.load(f)
-                    daemon_cfg = pyproject.get("tool", {}).get("clanker", {}).get("daemons", {})
-                    if daemon_cfg:
-                        configs[item.name] = dict(daemon_cfg)
-                except Exception:
+                    data = json.loads(autostart_file.read_text())
+                    if data.get("enabled", False):
+                        # Parse app_name_daemon_id_autostart.json format
+                        filename = autostart_file.stem  # Remove .json
+                        parts = filename.split('_', 2)  # Split into 3 parts max
+                        if len(parts) >= 2:
+                            app_name = parts[0]
+                            daemon_id = parts[1]
+                            autostart_configs.append((app_name, daemon_id, autostart_file))
+                except (json.JSONDecodeError, OSError):
                     continue
 
-        with self._db_connection() as conn:
-            cur = conn.execute("SELECT app_name, daemon_id FROM _daemon_startup WHERE enabled = 1")
-            for row in cur.fetchall():
-                app = row['app_name']
-                did = row['daemon_id']
-                key = f"{app}:{did}"
-                daemon = self.get_daemon(app, did)
-                if daemon.is_running():
-                    results[key] = True
-                    continue
-                cmd_template = (configs.get(app, {}) or {}).get(did)
-                if not cmd_template:
-                    results[key] = False
-                    continue
-                import shlex
-                cmd = shlex.split(cmd_template)
-                app_dir = Path("./apps") / app
-                # Run under app's uv environment by convention
-                uv_cmd = ["uv", "run", "--project", f"apps/{app}"] + cmd
-                results[key] = daemon.start(uv_cmd, cwd=app_dir)
+        for app_name, daemon_id, autostart_file in autostart_configs:
+            key = f"{app_name}:{daemon_id}"
+            daemon = self.get_daemon(app_name, daemon_id)
+
+            if daemon.is_running():
+                results[key] = True
+                continue
+
+            cmd_template = (configs.get(app_name, {}) or {}).get(daemon_id)
+            if not cmd_template:
+                results[key] = False
+                continue
+
+            # Check failure backoff
+            state = daemon._load_state()
+            failure_count = state.get('failure_count', 0)
+            last_failure_at = state.get('last_failure_at')
+
+            next_time = self._next_restart_time(failure_count, last_failure_at)
+            if next_time and datetime.now() < next_time:
+                logger.warning(
+                    f"Skipping restart for {key}; failure_count={failure_count}, retry after {next_time.isoformat()}"
+                )
+                results[key] = False
+                continue
+
+            import shlex
+            cmd = shlex.split(cmd_template)
+            app_dir = Path("./apps") / app_name
+            # Run under app's uv environment by convention
+            uv_cmd = ["uv", "run", "--project", f"apps/{app_name}"] + cmd
+            results[key] = daemon.start(uv_cmd, cwd=app_dir)
 
         return results

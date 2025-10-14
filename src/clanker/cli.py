@@ -10,6 +10,7 @@ from .models import list_available_providers, list_available_models
 from .agent import ClankerAgent
 from .models import ModelTier
 from .logger import get_logger
+from .runtime import bootstrap_runtime_context
 
 logger = get_logger("cli")
 
@@ -50,7 +51,8 @@ def get_agent() -> ClankerAgent:
     global _agent
     if _agent is None:
         logger.debug("Creating ClankerAgent instance")
-        _agent = ClankerAgent()
+        runtime = bootstrap_runtime_context()
+        _agent = ClankerAgent(runtime=runtime)
         logger.debug("ClankerAgent created successfully")
     return _agent
 
@@ -58,16 +60,20 @@ def get_agent() -> ClankerAgent:
 def _bootstrap_startup() -> None:
     """Initialize required services and autostart enabled daemons."""
     try:
-        # Ensure DB schema
-        from .storage.schema import ensure_database_initialized
-        ensure_database_initialized()
+        runtime = bootstrap_runtime_context()
     except Exception as e:
-        logger.error(f"Failed to initialize database schema during startup: {e}", exc_info=True)
+        logger.error(f"Failed to bootstrap runtime context: {e}", exc_info=True)
+        runtime = None
 
     try:
-        # Start enabled daemons (idempotent; skips running ones)
+        if runtime is None:
+            runtime = bootstrap_runtime_context()
         from .daemon import DaemonManager
-        DaemonManager().start_enabled_daemons()
+        manager = DaemonManager(runtime=runtime)
+        cleaned = manager.cleanup_stale_entries()
+        if cleaned:
+            logger.info(f"Cleaned {cleaned} stale daemon entries during startup")
+        manager.start_enabled_daemons()
     except Exception as e:
         logger.error(f"Failed to start enabled daemons during startup: {e}", exc_info=True)
 
@@ -130,12 +136,11 @@ def handle_coding_tool_command(tool_name: str, request: str):
     """Handle direct coding tool launch commands."""
     logger.info(f"Launching {tool_name} with request: '{request}'")
 
-    from .tools import launch_coding_tool
+    from .tools import launch_coding_tool_cli
     try:
-        result = launch_coding_tool(tool_name, request)
-        # If we get here, launch failed - show error
-        if result and result.startswith("❌"):
-            typer.echo(result, err=True)
+        err = launch_coding_tool_cli(tool_name, request)
+        if err:
+            typer.echo(err, err=True)
     except Exception as e:
         typer.echo(f"Launch failed: {e}", err=True)
         raise typer.Exit(1)
@@ -270,13 +275,12 @@ def system_launch(
         query_parts.append(request)
     query = " ".join(query_parts) if query_parts else ""
 
-    # Use the same launch tool as the agent
-    from .tools import launch_coding_tool
+    # Use CLI variant to take over the process
+    from .tools import launch_coding_tool_cli
     try:
-        result = launch_coding_tool(tool, query)
-        # If we get here, launch failed - show error
-        if result and result.startswith("❌"):
-            typer.echo(result, err=True)
+        err = launch_coding_tool_cli(tool, query)
+        if err:
+            typer.echo(err, err=True)
             raise typer.Exit(1)
     except Exception as e:
         typer.echo(f"Launch failed: {e}", err=True)
@@ -365,70 +369,23 @@ def main():
             sys.exit(1)
         return
 
-    # Store original argv for fallback
-    original_args = sys.argv[1:]
-
-    # Hook into sys.exit to catch typer command not found errors
-    original_exit = sys.exit
-    original_stderr = sys.stderr
-    exit_called = False
-    exit_code = 0
-
-    def exit_hook(code=0):
-        nonlocal exit_called, exit_code
-        exit_called = True
-        exit_code = code
-        # Don't actually exit - let us handle it
-
-    # Temporarily replace sys.exit and suppress stderr for command not found
-    sys.exit = exit_hook
-
-    # For command not found (exit code 2), suppress stderr during typer execution
-    from io import StringIO
-    temp_stderr = StringIO()
-    sys.stderr = temp_stderr
-
-    try:
-        app()
-    except SystemExit as e:
-        exit_called = True
-        exit_code = e.code
-    finally:
-        # Restore originals
-        sys.exit = original_exit
-        sys.stderr = original_stderr
-
-    # If typer tried to exit with code 2, check if it's a subcommand group needing help or unknown command
-    if exit_called and exit_code == 2:
-        request_str = " ".join(original_args)
-
-        # Skip natural language for help requests
-        if any(word in request_str.lower() for word in ["--help", "-h", "help"]):
-            sys.stderr.write(temp_stderr.getvalue())  # Show the original typer error
-            sys.exit(exit_code)
-
-        # Skip natural language for known subcommand groups that need arguments
-        # Check if the first arg matches our known subcommand groups
-        if original_args and original_args[0] in ["app", "system"]:
-            sys.stderr.write(temp_stderr.getvalue())  # Show the original typer error
-            sys.exit(exit_code)
-
-        # Try natural language for truly unknown commands
+    # Pre-parse to decide natural language vs structured before invoking Typer
+    known_entrypoints = {"app", "system", "claude", "cursor", "gemini", "codex", "_console"}
+    if sys.argv[1] not in known_entrypoints and not any(x in sys.argv for x in ("-h", "--help", "help")):
+        request_str = " ".join(sys.argv[1:])
         logger.info(f"Natural language fallback for: '{request_str}'")
         try:
-            logger.debug("Getting agent instance")
             agent = get_agent()
-            logger.debug("Calling agent.handle_request()")
             result = agent.handle_request(request_str)
-            logger.debug(f"Agent returned result: '{result['response'][:100]}...'")
             typer.echo(result['response'])
         except Exception as nl_error:
             logger.error(f"CLI natural language handling failed: {str(nl_error)}", exc_info=True)
             typer.echo(f"Error: {nl_error}", err=True)
             sys.exit(1)
-    elif exit_called:
-        # Other exit codes - honor them
-        sys.exit(exit_code)
+        return
+
+    # Otherwise, run the Typer app normally
+    app()
 
 
 if __name__ == "__main__":
