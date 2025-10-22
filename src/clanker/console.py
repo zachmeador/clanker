@@ -212,27 +212,164 @@ class InteractiveConsole:
         else:
             console.print("[dim]No tools configured[/dim]")
     
+    def _get_available_commands(self):
+        """Get all available slash commands."""
+        commands = {}
+
+        # Console commands
+        commands.update({
+            '/help': 'Show help information',
+            '/context': 'Show conversation history',
+            '/tools': 'List available tools',
+            '/exit': 'Exit the console'
+        })
+
+        # App exports (simplified - just get command names)
+        try:
+            from . import apps as apps_module
+            discovered = apps_module.discover()
+            for app_name, app_info in discovered.items():
+                if app_info.get('exports'):
+                    for export_name in app_info['exports']:
+                        commands[f'/{export_name}'] = f'Run {app_name} {export_name} command'
+        except:
+            pass
+
+        # Core CLI commands (basic ones)
+        commands.update({
+            '/list-apps': 'List all available apps',
+            '/app-info': 'Show app details',
+            '/models': 'Show available AI models'
+        })
+
+        return commands
+
+    def _show_command_suggestions(self, prefix="/"):
+        """Show available commands that match the prefix."""
+        commands = self._get_available_commands()
+        matches = [(cmd, desc) for cmd, desc in commands.items() if cmd.startswith(prefix)]
+        
+        if matches:
+            console.print("\n[dim]Available commands:[/dim]")
+            for cmd, desc in sorted(matches)[:10]:  # Show max 10 suggestions
+                console.print(f"  [cyan]{cmd}[/cyan] - [dim]{desc}[/dim]")
+            if len(matches) > 10:
+                console.print(f"  [dim]... and {len(matches) - 10} more[/dim]")
+            console.print()  # Empty line for spacing
+
+    def _get_user_input_with_completion(self):
+        """Get user input with Rich formatting and readline completion."""
+        try:
+            import readline
+
+            # Set up autocomplete before prompting
+            commands = list(self._get_available_commands().keys())
+            def completer(text, state):
+                if text.startswith('/'):
+                    matches = [cmd for cmd in commands if cmd.startswith(text)]
+                    return matches[state] if state < len(matches) else None
+                return None
+
+            readline.set_completer(completer)
+            readline.parse_and_bind("tab: complete")
+
+            # Use Rich prompt for proper formatting
+            return Prompt.ask("\n[bold blue]You[/bold blue]").strip()
+
+        except ImportError:
+            # Fallback to basic input if readline not available
+            return input("\nYou: ").strip()
+
+    async def _handle_slash_command(self, command):
+        """Handle slash command execution."""
+        commands = self._get_available_commands()
+
+        if command not in commands:
+            # Try fuzzy matching or suggestion
+            similar = [cmd for cmd in commands.keys() if cmd.split(':')[0] == command.split(':')[0]]
+            if similar:
+                console.print(f"[red]Unknown command: {command}[/red]")
+                console.print(f"[dim]Did you mean one of: {', '.join(similar)}[/dim]")
+            else:
+                console.print(f"[red]Unknown command: {command}[/red]")
+                console.print(f"[dim]Type /help for available commands[/dim]")
+            return
+
+        # Route to appropriate handler
+        if command == '/help':
+            self.show_help()
+        elif command == '/context':
+            self.show_context()
+        elif command == '/tools':
+            self.show_available_tools()
+        elif command == '/exit':
+            raise KeyboardInterrupt  # Exit the loop
+        elif command.startswith('/list-apps') or command == '/list-apps':
+            from . import apps as apps_module
+            apps_module.list_apps()
+        elif command.startswith('/models') or command == '/models':
+            from .models import list_available_providers, list_available_models
+            providers = list_available_providers()
+            if providers:
+                console.print(f"Configured providers: {', '.join(providers)}")
+                available = list_available_models()
+                if available:
+                    console.print("Available models:")
+                    for provider, models in available.items():
+                        console.print(f"  {provider}: {', '.join(models)}")
+            else:
+                console.print("No API keys configured")
+        elif ':' in command:
+            # Handle app commands like /example:add
+            app_cmd = command[1:]  # Remove the /
+            await self._execute_app_command(app_cmd)
+        else:
+            console.print(f"[red]Command not implemented yet: {command}[/red]")
+
+    async def _execute_app_command(self, app_cmd):
+        """Execute app command via subprocess."""
+        try:
+            # Parse command (e.g., "example:add" -> app="example", cmd="add")
+            if ':' in app_cmd:
+                app_name, cmd_name = app_cmd.split(':', 1)
+            else:
+                app_name, cmd_name = app_cmd.split('_', 1) if '_' in app_cmd else (app_cmd, '')
+
+            # Find the app and execute
+            from . import apps as apps_module
+            discovered = apps_module.discover()
+            app_info = discovered.get(app_name)
+
+            if not app_info:
+                console.print(f"[red]App not found: {app_name}[/red]")
+                return
+
+            # For now, just show that the command was recognized
+            # In a full implementation, you'd parse arguments and execute via subprocess
+            console.print(f"[green]Would execute: {app_name} {cmd_name}[/green]")
+            console.print(f"[dim]Note: Full argument parsing and execution not yet implemented[/dim]")
+
+        except Exception as e:
+            console.print(f"[red]Error executing command: {e}[/red]")
+
     def show_help(self):
         """Display help information."""
         help_text = """
 [bold]Clanker Interactive Console[/bold]
 
-[cyan]Commands:[/cyan]
-  context  - Show conversation history
-  tools    - List available tools
-  help     - Show this help message
-  exit     - Exit the console
-  
-[cyan]Features:[/cyan]
-  • Natural language queries
-  • Streaming responses
-  • Tool execution visibility
-  • Context-aware conversations
-  
+[cyan]Slash Commands:[/cyan]
+  /help        - Show this help message
+  /context     - Show conversation history
+  /tools       - List available tools
+  /exit        - Exit the console
+  /list-apps   - List all available apps
+  /models      - Show available AI models
+  /example:*   - Example app commands (add, list, search, etc.)
+
 [cyan]Examples:[/cyan]
   "What are my recipes?"
-  "List all Python files"
-  "Run the example app"
+  "/list-apps"
+  "/example:add 'Today was great!'"
 """
         console.print(Panel(help_text, border_style="blue"))
     
@@ -289,39 +426,38 @@ class InteractiveConsole:
 
             status_line = " | ".join(status_parts) if status_parts else "No providers configured"
 
-            welcome_text = f"[bold cyan]Clanker Interactive Console[/bold cyan]\n{status_line}\n\nType 'help' for commands, 'exit' to quit"
+            welcome_text = f"[bold cyan]Clanker Interactive Console[/bold cyan]\n{status_line}\n\nType '/help' for commands"
         except Exception:
             # Fallback to simple welcome if config check fails
-            welcome_text = "[bold cyan]Clanker Interactive Console[/bold cyan]\nType 'help' for commands, 'exit' to quit"
+            welcome_text = "[bold cyan]Clanker Interactive Console[/bold cyan]\nType '/help' for commands"
 
         console.print(Panel.fit(welcome_text, border_style="cyan"))
 
         # Show initial tips
-        console.print("[dim]Try: 'list my apps', 'what recipes do I have', 'help me with...'[/dim]\n")
+        console.print("[dim]Try: 'list my apps', 'what recipes do I have', 'help me with...'[/dim]")
+        console.print("[dim]Tip: Type '/' to see available commands[/dim]\n")
         
         # Main loop
         while True:
             try:
-                # Get user input
-                user_input = Prompt.ask("\n[bold blue]You[/bold blue]")
-                
-                # Handle special commands
-                if user_input.lower() in ['exit', 'quit', 'q']:
-                    break
-                
-                if user_input.lower() == 'context':
-                    self.show_context()
+                # Get user input with Rich formatting and readline completion
+                user_input = self._get_user_input_with_completion()
+
+                # Handle empty input
+                if not user_input:
                     continue
-                
-                if user_input.lower() == 'tools':
-                    self.show_available_tools()
+
+                # Handle slash commands
+                if user_input.startswith('/'):
+                    # Special case: if user just types "/" show all commands
+                    if user_input == '/':
+                        self._show_command_suggestions()
+                        continue
+                    
+                    await self._handle_slash_command(user_input)
                     continue
-                
-                if user_input.lower() == 'help':
-                    self.show_help()
-                    continue
-                
-                # Handle regular request
+
+                # Handle regular request (natural language)
                 response, tools_used = await self.handle_request(user_input)
                 
                 
