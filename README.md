@@ -6,7 +6,7 @@ Designed to be extended and used by LLMs.
 
 ## Project Status
 
-Clanker is currently in active prototyping/alpha. 
+Clanker is currently in active prototyping/alpha. There will be slop.
 
 ## The Console Experience
 
@@ -44,6 +44,12 @@ list = {cmd = "python main.py list", desc = "List all recipes"}
 [tool.clanker.daemons]
 web_server = "python main.py serve --port 8000"
 background_worker = "python main.py worker --threads 4"
+
+# Alternative: Use daemons.toml for more detailed configuration
+# [daemons.web_server]
+# command = "python main.py serve --port 8000"
+# autostart = true
+# description = "Development web server"
 ```
 
 The agent can:
